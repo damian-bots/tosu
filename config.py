@@ -78,21 +78,21 @@ confirmer = {}
 
 
 START_IMG_URL = getenv(
-    "START_IMG_URL", "https://graph.org/file/97669c286e18c2eddc72d.jpg"
+    "START_IMG_URL", "https://envs.sh/WzD.mp4"
 )
 PING_IMG_URL = getenv(
-    "PING_IMG_URL", "https://graph.org/file/97669c286e18c2eddc72d.jpg"
+    "PING_IMG_URL", "https://envs.sh/WK-.mp4"
 )
-PLAYLIST_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-STATS_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-TELEGRAM_AUDIO_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-TELEGRAM_VIDEO_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-STREAM_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-SOUNCLOUD_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-YOUTUBE_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-SPOTIFY_ARTIST_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-SPOTIFY_ALBUM_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-SPOTIFY_PLAYLIST_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
+PLAYLIST_IMG_URL = "https://envs.sh/WKx.mp4"
+STATS_IMG_URL = "https://envs.sh/WKV.mp4"
+TELEGRAM_AUDIO_URL = "https://envs.sh/WKy.mp4"
+TELEGRAM_VIDEO_URL = "https://envs.sh/WKx.mp4"
+STREAM_IMG_URL = "https://envs.sh/WKx.mp4"
+SOUNCLOUD_IMG_URL = "https://envs.sh/WzD.mp4"
+YOUTUBE_IMG_URL = "https://envs.sh/WKx.mp4"
+SPOTIFY_ARTIST_IMG_URL = "https://envs.sh/WzD.mp4"
+SPOTIFY_ALBUM_IMG_URL = "https://envs.sh/WK-.mp4"
+SPOTIFY_PLAYLIST_IMG_URL = "https://envs.sh/WKx.mp4"
 
 
 def time_to_seconds(time):
