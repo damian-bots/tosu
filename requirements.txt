@@ -8,11 +8,12 @@ gitpython
 hachoir
 heroku3
 motor
-pillow
+numpy
+opencv-python
+pillow==9.5.0
 psutil
 py-tgcalls==0.9.7
 pykeyboard
-pyrogram==2.0.106
 python-dotenv
 pyyaml
 requests
@@ -20,9 +21,7 @@ speedtest-cli
 spotipy
 tgcrypto
 unidecode
+uvloop
 yt-dlp
 youtube-search
 youtube-search-python
-Flask
-Flask-RESTful
-pymongo
