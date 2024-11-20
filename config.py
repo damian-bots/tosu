@@ -32,7 +32,7 @@ HEROKU_API_KEY = getenv("HEROKU_API_KEY")
 
 UPSTREAM_REPO = getenv(
     "UPSTREAM_REPO",
-    "https://github.com/Smaugopp/Voidmusic",
+    "https://github.com/damian-bots/tosu",
 )
 UPSTREAM_BRANCH = getenv("UPSTREAM_BRANCH", "master")
 GIT_TOKEN = getenv(
@@ -78,21 +78,21 @@ confirmer = {}
 
 
 START_IMG_URL = getenv(
-    "START_IMG_URL", "https://graph.org/file/97669c286e18c2eddc72d.jpg"
+    "START_IMG_URL", "https://telegra.ph/file/7eb142f734ee3769bcfc9-c451cbf2b4c7dbc9ac.jpg"
 )
 PING_IMG_URL = getenv(
-    "PING_IMG_URL", "https://graph.org/file/97669c286e18c2eddc72d.jpg"
+    "PING_IMG_URL", "https://telegra.ph/file/7eb142f734ee3769bcfc9-c451cbf2b4c7dbc9ac.jpg"
 )
-PLAYLIST_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-STATS_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-TELEGRAM_AUDIO_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-TELEGRAM_VIDEO_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-STREAM_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-SOUNCLOUD_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-YOUTUBE_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-SPOTIFY_ARTIST_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-SPOTIFY_ALBUM_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
-SPOTIFY_PLAYLIST_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
+PLAYLIST_IMG_URL = "https://envs.sh/SnH.jpg"
+STATS_IMG_URL = "https://telegra.ph/file/7eb142f734ee3769bcfc9-c451cbf2b4c7dbc9ac.jpg"
+TELEGRAM_AUDIO_URL = "https://envs.sh/SnH.jpg"
+TELEGRAM_VIDEO_URL = "https://envs.sh/SnH.jpg"
+STREAM_IMG_URL = "https://envs.sh/SnH.jpg"
+SOUNCLOUD_IMG_URL = "https://envs.sh/SnH.jpg"
+YOUTUBE_IMG_URL = "https://envs.sh/SnH.jpg"
+SPOTIFY_ARTIST_IMG_URL = "https://envs.sh/SnH.jpg"
+SPOTIFY_ALBUM_IMG_URL = "https://envs.sh/SnH.jpg"
+SPOTIFY_PLAYLIST_IMG_URL = "https://envs.sh/SnH.jpg"
 
 
 def time_to_seconds(time):
