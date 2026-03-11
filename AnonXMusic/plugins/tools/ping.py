@@ -21,7 +21,10 @@ async def ping_com(client, message: Message, _):
     )
     pytgping = await Anony.ping()
     UP, CPU, RAM, DISK = await bot_sys_stats()
-    resp = (datetime.now() - start).microseconds / 1000
+    
+    # FIXED: Using total_seconds() to accurately capture delays over 1 second
+    resp = round((datetime.now() - start).total_seconds() * 1000, 3)
+    
     await response.edit_text(
         _["ping_2"].format(resp, app.mention, UP, RAM, CPU, DISK, pytgping),
         reply_markup=supp_markup(_),
