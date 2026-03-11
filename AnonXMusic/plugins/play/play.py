@@ -72,6 +72,8 @@ async def play_commnd(
         if message.reply_to_message
         else None
     )
+    
+    # --- TELEGRAM AUDIO/VOICE SUPPORT ---
     if audio_telegram:
         if audio_telegram.file_size > 104857600:
             return await mystic.edit_text(_["play_5"])
@@ -110,6 +112,8 @@ async def play_commnd(
                 return await mystic.edit_text(err)
             return await mystic.delete()
         return
+        
+    # --- TELEGRAM VIDEO/DOCUMENT SUPPORT ---
     elif video_telegram:
         if message.reply_to_message.document:
             try:
@@ -154,6 +158,8 @@ async def play_commnd(
                 return await mystic.edit_text(err)
             return await mystic.delete()
         return
+        
+    # --- URL LINK SUPPORT ---
     elif url:
         if await YouTube.exists(url):
             if "playlist" in url:
@@ -184,6 +190,7 @@ async def play_commnd(
                     details["title"],
                     details["duration_min"],
                 )
+                
         elif await Spotify.valid(url):
             spotify = True
             if not config.SPOTIFY_CLIENT_ID and not config.SPOTIFY_CLIENT_SECRET:
@@ -227,95 +234,33 @@ async def play_commnd(
                 cap = _["play_11"].format(message.from_user.first_name)
             else:
                 return await mystic.edit_text(_["play_15"])
+                
+        # ==========================================
+        # 🚫 BLOCKED PLATFORMS
+        # ==========================================
         elif await Apple.valid(url):
-            if "album" in url:
-                try:
-                    details, track_id = await Apple.track(url)
-                except:
-                    return await mystic.edit_text(_["play_3"])
-                streamtype = "youtube"
-                img = details["thumb"]
-                cap = _["play_10"].format(details["title"], details["duration_min"])
-            elif "playlist" in url:
-                spotify = True
-                try:
-                    details, plist_id = await Apple.playlist(url)
-                except:
-                    return await mystic.edit_text(_["play_3"])
-                streamtype = "playlist"
-                plist_type = "apple"
-                cap = _["play_12"].format(app.mention, message.from_user.mention)
-                img = url
-            else:
-                return await mystic.edit_text(_["play_3"])
+            return await mystic.edit_text(
+                "❌ **Platform Not Supported**\n\nStreaming from **Apple Music** is currently disabled.\n\n✅ Please use **YouTube, Spotify, or Telegram files**."
+            )
+            
         elif await Resso.valid(url):
-            try:
-                details, track_id = await Resso.track(url)
-            except:
-                return await mystic.edit_text(_["play_3"])
-            streamtype = "youtube"
-            img = details["thumb"]
-            cap = _["play_10"].format(details["title"], details["duration_min"])
+            return await mystic.edit_text(
+                "❌ **Platform Not Supported**\n\nStreaming from **Resso** is currently disabled.\n\n✅ Please use **YouTube, Spotify, or Telegram files**."
+            )
+            
         elif await SoundCloud.valid(url):
-            try:
-                details, track_path = await SoundCloud.download(url)
-            except:
-                return await mystic.edit_text(_["play_3"])
-            duration_sec = details["duration_sec"]
-            if duration_sec > config.DURATION_LIMIT:
-                return await mystic.edit_text(
-                    _["play_6"].format(
-                        config.DURATION_LIMIT_MIN,
-                        app.mention,
-                    )
-                )
-            try:
-                await stream(
-                    _,
-                    mystic,
-                    user_id,
-                    details,
-                    chat_id,
-                    user_name,
-                    message.chat.id,
-                    streamtype="soundcloud",
-                    forceplay=fplay,
-                )
-            except Exception as e:
-                ex_type = type(e).__name__
-                err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
-                return await mystic.edit_text(err)
-            return await mystic.delete()
+            return await mystic.edit_text(
+                "❌ **Platform Not Supported**\n\nStreaming from **SoundCloud** is currently disabled.\n\n✅ Please use **YouTube, Spotify, or Telegram files**."
+            )
+            
         else:
-            try:
-                await Anony.stream_call(url)
-            except NoActiveGroupCall:
-                await mystic.edit_text(_["black_9"])
-                return await app.send_message(
-                    chat_id=config.LOGGER_ID,
-                    text=_["play_17"],
-                )
-            except Exception as e:
-                return await mystic.edit_text(_["general_2"].format(type(e).__name__))
-            await mystic.edit_text(_["str_2"])
-            try:
-                await stream(
-                    _,
-                    mystic,
-                    message.from_user.id,
-                    url,
-                    chat_id,
-                    message.from_user.first_name,
-                    message.chat.id,
-                    video=video,
-                    streamtype="index",
-                    forceplay=fplay,
-                )
-            except Exception as e:
-                ex_type = type(e).__name__
-                err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
-                return await mystic.edit_text(err)
-            return await play_logs(message, streamtype="M3u8 or Index Link")
+            # Handles raw M3U8, Index links, and unrecognized streaming links
+            return await mystic.edit_text(
+                "❌ **Link Type Not Supported**\n\nStreaming from **Raw Links & M3U8 URLs** is currently disabled.\n\n✅ Please use **YouTube, Spotify, or Telegram files**."
+            )
+        # ==========================================
+
+    # --- YOUTUBE SEARCH QUERY ---
     else:
         if len(message.command) < 2:
             buttons = botplaylist_markup(_)
@@ -332,6 +277,8 @@ async def play_commnd(
         except:
             return await mystic.edit_text(_["play_3"])
         streamtype = "youtube"
+
+    # --- PROCESS THE STREAM ---
     if str(playmode) == "Direct":
         if not plist_type:
             if details["duration_min"]:
