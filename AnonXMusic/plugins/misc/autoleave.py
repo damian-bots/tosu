@@ -29,7 +29,7 @@ async def auto_leave():
                                 and i.chat.id != -1001686672798
                                 and i.chat.id != -1001549206010
                             ):
-                                if left == 20:
+                                if left == 80:
                                     continue
                                 if not await is_active_chat(i.chat.id):
                                     try:
@@ -72,4 +72,5 @@ async def auto_end():
 
 
 asyncio.create_task(auto_end())
+
 
