@@ -15,11 +15,13 @@ BOT_TOKEN = getenv("BOT_TOKEN")
 
 # Get your mongo url from cloud.mongodb.com
 MONGO_DB_URI = getenv("MONGO_DB_URI", None)
+DB_URI = getenv("DB_URI", None)
 
 DURATION_LIMIT_MIN = int(getenv("DURATION_LIMIT", 10000))
 
 # Chat id of a group for logging bot's activities
 LOGGER_ID = int(getenv("LOGGER_ID", None))
+MEDIA_CHANNEL_ID = int(getenv("MEDIA_CHANNEL_ID", None))
 
 #Get API_KEY from deadlinetech.site or @smaugxd
 API_URL = getenv("API_URL", "https://api.deadlinetech.site")
