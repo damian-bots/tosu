@@ -6,7 +6,7 @@ import config
 # --- CONFIGURATION ---
 # Fetching credentials securely from environment variables
 MONGO_URL = config.MONGO_DB_URI
-DB_NAME = CONFIG.DB_NAME
+DB_NAME = config.DB_NAME
 # ---------------------
 
 async def revert_migration():
