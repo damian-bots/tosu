@@ -85,16 +85,16 @@ confirmer = {}
 
 
 START_IMG_URL = getenv(
-    "START_IMG_URL", "https://graph.org/file/604f8104e1f86cdb2d0e5.jpg"
+    "START_IMG_URL", "https://files.catbox.moe/67fpo2.jpg"
 )
 PING_IMG_URL = getenv(
-    "PING_IMG_URL", "https://graph.org/file/604f8104e1f86cdb2d0e5.jpg"
+    "PING_IMG_URL", "https://files.catbox.moe/4q5mlx.jpg"
 )
 PLAYLIST_IMG_URL = "https://graph.org/file/604f8104e1f86cdb2d0e5.jpg"
 STATS_IMG_URL = "https://files.catbox.moe/trp9ly.jpg"
 TELEGRAM_AUDIO_URL = "https://graph.org/file/604f8104e1f86cdb2d0e5.jpg"
 TELEGRAM_VIDEO_URL = "https://telegra.ph/file/cf0cb9c6645dab914d406-5e1d589294e2cf400c.jpg"
-STREAM_IMG_URL = "https://graph.org/file/604f8104e1f86cdb2d0e5.jpg"
+STREAM_IMG_URL = "https://files.catbox.moe/he87u5.jpg"
 SOUNCLOUD_IMG_URL = "https://graph.org/file/604f8104e1f86cdb2d0e5.jpg"
 YOUTUBE_IMG_URL = "https://graph.org/file/604f8104e1f86cdb2d0e5.jpg"
 SPOTIFY_ARTIST_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
