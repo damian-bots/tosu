@@ -12,7 +12,8 @@ from AnonXMusic.mongo.readable_time import get_readable_time
 
 @app.on_message(filters.command(["afk"], prefixes=["/"]))
 async def active_afk(_, message: Message):
-    if message.sender_chat:
+    # Added safety check for Anonymous Admins / Channels
+    if message.sender_chat or not message.from_user:
         return
     user_id = message.from_user.id
     verifier, reasondb = await is_afk(user_id)
@@ -168,17 +169,18 @@ chat_watcher_group = 1
     group=chat_watcher_group,
 )
 async def chat_watcher_func(_, message):
-    if message.sender_chat:
+    # Added safety check for Anonymous Admins / Channels
+    if message.sender_chat or not message.from_user:
         return
     userid = message.from_user.id
     user_name = message.from_user.first_name
-    if message.entities:
+
+    # FIX: Replaced emoji-breaking slicing with safe .startswith()
+    message_text = message.text or message.caption
+    if message_text:
         possible = ["/afk", f"/afk@{app.username}"]
-        message_text = message.text or message.caption
-        for entity in message.entities:
-            if entity.type == MessageEntityType.BOT_COMMAND:
-                if (message_text[0 : 0 + entity.length]).lower() in possible:
-                    return
+        if any(message_text.lower().startswith(p) for p in possible):
+            return
 
     msg = ""
     replied_user_id = 0
@@ -221,7 +223,7 @@ async def chat_watcher_func(_, message):
         except:
             msg += f"{user_name[:25]} ɪs ʙᴀᴄᴋ ᴏɴʟɪɴᴇ\n\n"
 
-    if message.reply_to_message:
+    if message.reply_to_message and message.reply_to_message.from_user:
         try:
             replied_first_name = message.reply_to_message.from_user.first_name
             replied_user_id = message.reply_to_message.from_user.id
