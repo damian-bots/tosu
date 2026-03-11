@@ -236,27 +236,27 @@ async def play_commnd(
                 return await mystic.edit_text(_["play_15"])
                 
         # ==========================================
-        # 🚫 BLOCKED PLATFORMS
+        # 🚫 BLOCKED PLATFORMS (HTML FORMATTED)
         # ==========================================
         elif await Apple.valid(url):
             return await mystic.edit_text(
-                "❌ **Platform Not Supported**\n\nStreaming from **Apple Music** is currently disabled.\n\n✅ Please use **YouTube, Spotify, or Telegram files**."
+                "❌ <b>Platform Not Supported</b>\n\nStreaming from <b>Apple Music</b> is currently disabled.\n\n✅ Please use <b>YouTube, Spotify, or Telegram files</b>."
             )
             
         elif await Resso.valid(url):
             return await mystic.edit_text(
-                "❌ **Platform Not Supported**\n\nStreaming from **Resso** is currently disabled.\n\n✅ Please use **YouTube, Spotify, or Telegram files**."
+                "❌ <b>Platform Not Supported</b>\n\nStreaming from <b>Resso</b> is currently disabled.\n\n✅ Please use <b>YouTube, Spotify, or Telegram files</b>."
             )
             
         elif await SoundCloud.valid(url):
             return await mystic.edit_text(
-                "❌ **Platform Not Supported**\n\nStreaming from **SoundCloud** is currently disabled.\n\n✅ Please use **YouTube, Spotify, or Telegram files**."
+                "❌ <b>Platform Not Supported</b>\n\nStreaming from <b>SoundCloud</b> is currently disabled.\n\n✅ Please use <b>YouTube, Spotify, or Telegram files</b>."
             )
             
         else:
             # Handles raw M3U8, Index links, and unrecognized streaming links
             return await mystic.edit_text(
-                "❌ **Link Type Not Supported**\n\nStreaming from **Raw Links & M3U8 URLs** is currently disabled.\n\n✅ Please use **YouTube, Spotify, or Telegram files**."
+                "❌ <b>Link Type Not Supported</b>\n\nStreaming from <b>Raw Links & M3U8 URLs</b> is currently disabled.\n\n✅ Please use <b>YouTube, Spotify, or Telegram files</b>."
             )
         # ==========================================
 
