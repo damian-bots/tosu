@@ -14,7 +14,7 @@ API_HASH = "9a098f01aa56c836f2e34aee4b7ef963"
 BOT_TOKEN = getenv("BOT_TOKEN")
 
 # Get your mongo url from cloud.mongodb.com
-MONGO_DB_URI = getenv("MONGO_DB_URI", None)
+MONGO_DB_URI = getenv("MONGO_DB_URI")
 DB_URI = getenv("DB_URI")
 DB_NAME = getenv("DB_NAME")
 
