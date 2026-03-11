@@ -28,7 +28,9 @@ from youtubesearchpython.__future__ import VideosSearch
 
 from config import API_URL, API_KEY, DB_URI, MEDIA_CHANNEL_ID
 from AnonXMusic import app as TG_APP
+from AnonXMusic.logging import LOGGER as LOG
 
+LOGGER = LOG(__name__)
 # ============================
 # DB NAME & COLLECTION (SET IN CODE)
 # ============================
@@ -40,17 +42,10 @@ MEDIA_COLLECTION_NAME = "medias"
 # ============================
 DOWNLOAD_DIR = "downloads"
 
-# ============================
-# LOGGER SETUP
-# ============================
-LOGGER = logging.getLogger(__name__)
 
-# ============================
-# TUNING CONSTANTS
-# ============================
 CHUNK_SIZE = 1024 * 1024
 V2_HTTP_RETRIES = 5
-V2_DOWNLOAD_CYCLES = 5
+V2_DOWNLOAD_CYCLES = 4
 HARD_RETRY_WAIT = 3
 JOB_POLL_ATTEMPTS = 10
 JOB_POLL_INTERVAL = 2.0
