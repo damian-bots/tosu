@@ -1,6 +1,7 @@
 # AnonXMusic/utils/Youtube.py
 # Updated: Anonx Optimized Version
 # Stable API & DB Download Implementation
+# Flow: DB Cache -> V2 API -> yt-dlp Fallback
 
 import asyncio
 import os
@@ -14,7 +15,7 @@ import random
 import logging
 from pathlib import Path
 from typing import Union, Dict, Optional, Any
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse
 
 import aiofiles
 import aiohttp
@@ -118,6 +119,7 @@ DOWNLOAD_STATS: Dict[str, int] = {
     "media_db_hit": 0,
     "media_db_miss": 0,
     "media_db_fail": 0,
+    "ytdlp_fallback": 0,
 }
 
 
@@ -147,7 +149,7 @@ _inflight_lock = asyncio.Lock()
 # ============================
 # COOKIE FILE HANDLER
 # ============================
-def cookie_txt_file() -> str:
+def cookie_txt_file() -> Optional[str]:
     """Randomly select a cookie file from cookies directory."""
     folder_path = os.path.join(os.getcwd(), "cookies")
     filename = os.path.join(os.getcwd(), "cookies", "logs.csv")
@@ -741,7 +743,7 @@ async def deduplicate_download(key: str, runner):
 
 
 # ============================
-# MAIN DOWNLOAD FUNCTION
+# MAIN DOWNLOAD FUNCTION (Optimized Path)
 # ============================
 async def media_download(link: str, type: str, title: str = "", video_id: str = None, validate_url: bool = False) -> Optional[str]:
     """
@@ -784,6 +786,7 @@ async def media_download(link: str, type: str, title: str = "", video_id: str = 
                     _inc("success_audio")
                 else:
                     _inc("success_video")
+                LOGGER.info(f"✅ DB-CACHE | {vid}")
                 return db_path
         
         # 2) Try V2 API if configured
@@ -795,6 +798,7 @@ async def media_download(link: str, type: str, title: str = "", video_id: str = 
                     _inc("success_audio")
                 else:
                     _inc("success_video")
+                LOGGER.info(f"✅ V2-API | {vid or link}")
                 return v2_path
         
         _inc("failed")
@@ -817,7 +821,7 @@ async def media_download(link: str, type: str, title: str = "", video_id: str = 
 
 
 # ============================
-# YT-DLP HELPERS
+# YT-DLP FALLBACK FUNCTIONS
 # ============================
 async def check_file_size(link: str) -> Optional[int]:
     """Check file size of video before download."""
@@ -866,6 +870,103 @@ async def shell_cmd(cmd: str) -> str:
             return errorz.decode("utf-8")
     
     return out.decode("utf-8")
+
+
+def _ytdlp_audio_dl(link: str, cookie_file: Optional[str]) -> str:
+    """Download audio using yt-dlp (sync function for executor)."""
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",
+        "geo_bypass": True,
+        "nocheckcertificate": True,
+        "quiet": True,
+        "no_warnings": True,
+    }
+    
+    if cookie_file:
+        ydl_opts["cookiefile"] = cookie_file
+    
+    x = yt_dlp.YoutubeDL(ydl_opts)
+    info = x.extract_info(link, False)
+    xyz = os.path.join(DOWNLOAD_DIR, f"{info['id']}.{info['ext']}")
+    
+    if os.path.exists(xyz):
+        return xyz
+    
+    x.download([link])
+    return xyz
+
+
+def _ytdlp_video_dl(link: str, cookie_file: Optional[str]) -> str:
+    """Download video using yt-dlp (sync function for executor)."""
+    ydl_opts = {
+        "format": "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])",
+        "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",
+        "geo_bypass": True,
+        "nocheckcertificate": True,
+        "quiet": True,
+        "no_warnings": True,
+    }
+    
+    if cookie_file:
+        ydl_opts["cookiefile"] = cookie_file
+    
+    x = yt_dlp.YoutubeDL(ydl_opts)
+    info = x.extract_info(link, False)
+    xyz = os.path.join(DOWNLOAD_DIR, f"{info['id']}.{info['ext']}")
+    
+    if os.path.exists(xyz):
+        return xyz
+    
+    x.download([link])
+    return xyz
+
+
+def _ytdlp_song_video_dl(link: str, format_id: str, title: str, cookie_file: Optional[str]) -> str:
+    """Download song video using yt-dlp (sync function for executor)."""
+    formats = f"{format_id}+140"
+    fpath = f"{DOWNLOAD_DIR}/{title}"
+    
+    ydl_opts = {
+        "format": formats,
+        "outtmpl": fpath,
+        "geo_bypass": True,
+        "nocheckcertificate": True,
+        "quiet": True,
+        "no_warnings": True,
+        "prefer_ffmpeg": True,
+        "merge_output_format": "mp4",
+    }
+    
+    if cookie_file:
+        ydl_opts["cookiefile"] = cookie_file
+    
+    x = yt_dlp.YoutubeDL(ydl_opts)
+    x.download([link])
+    return f"{DOWNLOAD_DIR}/{title}.mp4"
+
+
+def _ytdlp_song_audio_dl(link: str, format_id: str, title: str, cookie_file: Optional[str]) -> str:
+    """Download song audio using yt-dlp (sync function for executor)."""
+    fpath = f"{DOWNLOAD_DIR}/{title}.%(ext)s"
+    
+    ydl_opts = {
+        "format": format_id,
+        "outtmpl": fpath,
+        "geo_bypass": True,
+        "nocheckcertificate": True,
+        "quiet": True,
+        "no_warnings": True,
+        "prefer_ffmpeg": True,
+        "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
+    }
+    
+    if cookie_file:
+        ydl_opts["cookiefile"] = cookie_file
+    
+    x = yt_dlp.YoutubeDL(ydl_opts)
+    x.download([link])
+    return f"{DOWNLOAD_DIR}/{title}.mp3"
 
 
 # ============================
@@ -1142,119 +1243,56 @@ class YouTubeAPI:
         """
         Download video/audio from YouTube.
         
+        Flow: DB Cache -> V2 API -> yt-dlp Fallback
+        
         Returns:
             Tuple of (file_path, direct) where direct is True if downloaded, False if streaming URL
         """
         if videoid:
             link = self.base + videoid
         
+        _ensure_dir(DOWNLOAD_DIR)
         loop = asyncio.get_running_loop()
         cookie_file = cookie_txt_file()
+        vid = extract_video_id(link)
         
-        def audio_dl():
-            ydl_opts = {
-                "format": "bestaudio/best",
-                "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",
-                "geo_bypass": True,
-                "nocheckcertificate": True,
-                "quiet": True,
-                "no_warnings": True,
-            }
-            
-            if cookie_file:
-                ydl_opts["cookiefile"] = cookie_file
-            
-            x = yt_dlp.YoutubeDL(ydl_opts)
-            info = x.extract_info(link, False)
-            xyz = os.path.join(DOWNLOAD_DIR, f"{info['id']}.{info['ext']}")
-            
-            if os.path.exists(xyz):
-                return xyz
-            
-            x.download([link])
-            return xyz
-        
-        def video_dl():
-            ydl_opts = {
-                "format": "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])",
-                "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",
-                "geo_bypass": True,
-                "nocheckcertificate": True,
-                "quiet": True,
-                "no_warnings": True,
-            }
-            
-            if cookie_file:
-                ydl_opts["cookiefile"] = cookie_file
-            
-            x = yt_dlp.YoutubeDL(ydl_opts)
-            info = x.extract_info(link, False)
-            xyz = os.path.join(DOWNLOAD_DIR, f"{info['id']}.{info['ext']}")
-            
-            if os.path.exists(xyz):
-                return xyz
-            
-            x.download([link])
-            return xyz
-        
-        def song_video_dl():
-            formats = f"{format_id}+140"
-            fpath = f"{DOWNLOAD_DIR}/{title}"
-            
-            ydl_opts = {
-                "format": formats,
-                "outtmpl": fpath,
-                "geo_bypass": True,
-                "nocheckcertificate": True,
-                "quiet": True,
-                "no_warnings": True,
-                "prefer_ffmpeg": True,
-                "merge_output_format": "mp4",
-            }
-            
-            if cookie_file:
-                ydl_opts["cookiefile"] = cookie_file
-            
-            x = yt_dlp.YoutubeDL(ydl_opts)
-            x.download([link])
-        
-        def song_audio_dl():
-            fpath = f"{DOWNLOAD_DIR}/{title}.%(ext)s"
-            
-            ydl_opts = {
-                "format": format_id,
-                "outtmpl": fpath,
-                "geo_bypass": True,
-                "nocheckcertificate": True,
-                "quiet": True,
-                "no_warnings": True,
-                "prefer_ffmpeg": True,
-                "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
-            }
-            
-            if cookie_file:
-                ydl_opts["cookiefile"] = cookie_file
-            
-            x = yt_dlp.YoutubeDL(ydl_opts)
-            x.download([link])
-        
-        _ensure_dir(DOWNLOAD_DIR)
-        
+        # ========================================
+        # SPECIAL FORMAT DOWNLOADS (songaudio/songvideo)
+        # These use specific format IDs - use yt-dlp directly
+        # ========================================
         if songvideo:
-            await loop.run_in_executor(None, song_video_dl)
+            await loop.run_in_executor(None, _ytdlp_song_video_dl, link, format_id, title, cookie_file)
             fpath = f"{DOWNLOAD_DIR}/{title}.mp4"
             return fpath, True
         
-        elif songaudio:
-            await loop.run_in_executor(None, song_audio_dl)
+        if songaudio:
+            await loop.run_in_executor(None, _ytdlp_song_audio_dl, link, format_id, title, cookie_file)
             fpath = f"{DOWNLOAD_DIR}/{title}.mp3"
             return fpath, True
         
-        elif video:
+        # ========================================
+        # NORMAL DOWNLOADS - Try optimized path first
+        # ========================================
+        is_video = bool(video)
+        media_type = "video" if is_video else "audio"
+        
+        # 1) Try DB Cache + V2 API via media_download
+        optimized_path = await media_download(link, media_type, title=title or "", video_id=vid)
+        
+        if optimized_path and os.path.exists(optimized_path):
+            return optimized_path, True
+        
+        # ========================================
+        # 2) FALLBACK: yt-dlp direct download
+        # ========================================
+        _inc("ytdlp_fallback")
+        LOGGER.info(f"⚠️ YT-DLP FALLBACK | {vid or link}")
+        
+        if video:
             # Check is_on_off for download mode
             if await is_on_off(1):
                 # Direct download mode
-                downloaded_file = await loop.run_in_executor(None, video_dl)
+                downloaded_file = await loop.run_in_executor(None, _ytdlp_video_dl, link, cookie_file)
                 return downloaded_file, True
             else:
                 # Streaming URL mode
@@ -1273,19 +1311,19 @@ class YouTubeAPI:
                     downloaded_file = stdout.decode().split("\n")[0]
                     return downloaded_file, False
                 else:
-                    # Fallback to direct download
+                    # If streaming fails, try direct download
                     file_size = await check_file_size(link)
                     if not file_size:
                         return None, False
                     
                     total_size_mb = file_size / (1024 * 1024)
                     if total_size_mb > 250:
+                        LOGGER.error(f"File size {total_size_mb:.2f} MB exceeds limit")
                         return None, False
                     
-                    downloaded_file = await loop.run_in_executor(None, video_dl)
+                    downloaded_file = await loop.run_in_executor(None, _ytdlp_video_dl, link, cookie_file)
                     return downloaded_file, True
         
-        else:
-            # Audio download
-            downloaded_file = await loop.run_in_executor(None, audio_dl)
-            return downloaded_file, True
+        # Audio download (default)
+        downloaded_file = await loop.run_in_executor(None, _ytdlp_audio_dl, link, cookie_file)
+        return downloaded_file, True
