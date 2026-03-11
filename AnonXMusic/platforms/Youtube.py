@@ -147,9 +147,9 @@ async def _download_cdn(url: str, out_path: str) -> bool:
     return False
 
 async def v2_download_process(link: str, video: bool, file_id: str, api_key: str, api_url: str) -> Optional[str]:
-    V2_DOWNLOAD_CYCLES = 5
+    V2_DOWNLOAD_CYCLES = 4
     NO_CANDIDATE_WAIT = 4
-    JOB_POLL_ATTEMPTS = 15     
+    JOB_POLL_ATTEMPTS = 10     
     JOB_POLL_INTERVAL = 2.0    
     JOB_POLL_BACKOFF = 1.2
     
