@@ -18,7 +18,7 @@ async def activevc(_, message: Message):
         await mystic.edit_text(f"» ɴᴏ ᴀᴄᴛɪᴠᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛs ᴏɴ {app.mention}.")
     else:
         await mystic.edit_text(
-            f"<b>» ᴛᴏᴛᴀʟ ᴀᴄᴛɪᴠᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛs :</b> `{len(served_chats)}`"
+            f"<b>» ᴛᴏᴛᴀʟ ᴀᴄᴛɪᴠᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛs :</b> <code>{len(served_chats)}</code>"
         )
 
 
@@ -33,3 +33,4 @@ async def activevi_(_, message: Message):
         await mystic.edit_text(
             f"<b>» ᴛᴏᴛᴀʟ ᴀᴄᴛɪᴠᴇ ᴠɪᴅᴇᴏ ᴄʜᴀᴛs :</b> `{len(served_chats)}`"
         )
+
