@@ -21,8 +21,12 @@ DURATION_LIMIT_MIN = int(getenv("DURATION_LIMIT", 10000))
 # Chat id of a group for logging bot's activities
 LOGGER_ID = int(getenv("LOGGER_ID", None))
 
+#Get API_KEY from deadlinetech.site or @smaugxd
+API_URL = getenv("API_URL", "https://api.deadlinetech.site")
+API_KEY = getenv("API_KEY")
+
 # Get this value from @FallenxBot on Telegram by /id
-OWNER_ID = 6133490339
+OWNER_ID = 89891145
 
 ## Fill these variables if you're deploying on heroku.
 # Your heroku app name
