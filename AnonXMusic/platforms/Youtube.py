@@ -26,26 +26,59 @@ from pyrogram.types import Message
 from pyrogram.errors import FloodWait
 from youtubesearchpython.__future__ import VideosSearch
 
-from config import API_URL, API_KEY, DB_URI, MEDIA_CHANNEL_ID
-from AnonXMusic import app as TG_APP
-from AnonXMusic.logging import LOGGER as LOG
+from AnonXMusic.utils.database import is_on_off
+from AnonXMusic.utils.formatters import time_to_seconds
 
-LOGGER = LOG(__name__)
+# ============================
+# CONFIGURATION IMPORTS
+# ============================
+try:
+    from config import API_URL
+except Exception:
+    API_URL = None
+
+try:
+    from config import API_KEY
+except Exception:
+    API_KEY = None
+
+try:
+    from config import DB_URI
+except Exception:
+    DB_URI = None
+
+try:
+    from config import MEDIA_CHANNEL_ID
+except Exception:
+    MEDIA_CHANNEL_ID = None
+
+try:
+    from AnonXMusic import app as TG_APP
+except Exception:
+    TG_APP = None
+
 # ============================
 # DB NAME & COLLECTION (SET IN CODE)
 # ============================
-MEDIA_DB_NAME = "arcapi"
-MEDIA_COLLECTION_NAME = "medias"
+MEDIA_DB_NAME = "anonx_media"
+MEDIA_COLLECTION_NAME = "cached_medias"
 
 # ============================
 # DOWNLOAD DIRECTORY
 # ============================
 DOWNLOAD_DIR = "downloads"
 
+# ============================
+# LOGGER SETUP
+# ============================
+LOGGER = logging.getLogger(__name__)
 
+# ============================
+# TUNING CONSTANTS
+# ============================
 CHUNK_SIZE = 1024 * 1024
 V2_HTTP_RETRIES = 5
-V2_DOWNLOAD_CYCLES = 4
+V2_DOWNLOAD_CYCLES = 5
 HARD_RETRY_WAIT = 3
 JOB_POLL_ATTEMPTS = 10
 JOB_POLL_INTERVAL = 2.0
@@ -53,7 +86,7 @@ JOB_POLL_BACKOFF = 1.2
 NO_CANDIDATE_WAIT = 4
 CDN_RETRIES = 5
 CDN_RETRY_DELAY = 2
-HARD_TIMEOUT = 80
+HARD_TIMEOUT = 120
 
 # ============================
 # CIRCUIT BREAKER
@@ -235,7 +268,7 @@ def is_safe_url(text: str) -> bool:
     """
     ALLOWED_DOMAINS = {
         "youtube.com", "www.youtube.com", "m.youtube.com", 
-        "youtu.be", "music.youtube.com", "open.spotify.com"
+        "youtu.be", "music.youtube.com"
     }
     
     if not text:
@@ -427,7 +460,6 @@ async def _download_from_media_db(track_id: str, is_video: bool) -> Optional[str
         try:
             dl_res = await asyncio.wait_for(TG_APP.download_media(msg, file_name=tmp_path), timeout=HARD_TIMEOUT)
         except asyncio.TimeoutError:
-            LOGGER.error(f"DB Timeout > {HARD_TIMEOUT}s | ID: {track_id}")
             _inc("timeout_fail")
             return None
         except FloodWait as e:
@@ -521,9 +553,13 @@ def _normalize_candidate_to_url(candidate: str) -> Optional[str]:
     if c.startswith("/"):
         if c.startswith("/root") or c.startswith("/home"):
             return None
-        return f"{API_URL.rstrip('/')}{c}"
+        if API_URL:
+            return f"{API_URL.rstrip('/')}{c}"
+        return None
     
-    return f"{API_URL.rstrip('/')}/{c.lstrip('/')}"
+    if API_URL:
+        return f"{API_URL.rstrip('/')}/{c.lstrip('/')}"
+    return None
 
 
 def _guess_ext_from_url(u: str, is_video: bool) -> str:
@@ -721,11 +757,9 @@ async def media_download(link: str, type: str, title: str = "", video_id: str = 
     Returns:
         Path to downloaded file or None on failure
     """
-    start_t = time.perf_counter()
     _inc("total")
     
     if not link:
-        LOGGER.error("Empty link provided")
         _inc("failed")
         return None
     
@@ -737,12 +771,11 @@ async def media_download(link: str, type: str, title: str = "", video_id: str = 
     dedup_id = vid or link.strip()
     key = f"{type}:{dedup_id}"
     
-    clean_title = (title or dedup_id)[:30]
-    
     async def _cycle():
         is_video = (type == "video")
         is_audio = (type == "audio")
         
+        # 1) Try DB cache first
         if vid:
             db_path = await _download_from_media_db(vid, is_video=is_video)
             if db_path and os.path.exists(db_path):
@@ -753,15 +786,16 @@ async def media_download(link: str, type: str, title: str = "", video_id: str = 
                     _inc("success_video")
                 return db_path
         
-        v2_path = await v2_download(link, media_type=("video" if is_video else "audio"))
-        
-        if v2_path and os.path.exists(v2_path):
-            _inc("success")
-            if is_audio:
-                _inc("success_audio")
-            else:
-                _inc("success_video")
-            return v2_path
+        # 2) Try V2 API if configured
+        if API_URL and API_KEY:
+            v2_path = await v2_download(link, media_type=("video" if is_video else "audio"))
+            if v2_path and os.path.exists(v2_path):
+                _inc("success")
+                if is_audio:
+                    _inc("success_audio")
+                else:
+                    _inc("success_video")
+                return v2_path
         
         _inc("failed")
         if is_audio:
@@ -777,7 +811,6 @@ async def media_download(link: str, type: str, title: str = "", video_id: str = 
         except asyncio.TimeoutError:
             _inc("timeout_fail")
             _inc("failed")
-            LOGGER.error(f"Timeout > {HARD_TIMEOUT}s | {clean_title}")
             return None
     
     return await deduplicate_download(key, run)
@@ -906,23 +939,9 @@ class YouTubeAPI:
             if str(duration_min) == "None":
                 duration_sec = 0
             else:
-                duration_sec = self._time_to_seconds(duration_min)
+                duration_sec = int(time_to_seconds(duration_min))
         
         return title, duration_min, duration_sec, thumbnail, vidid
-    
-    def _time_to_seconds(self, time_str: str) -> int:
-        """Convert time string to seconds."""
-        if not time_str or time_str == "None":
-            return 0
-        
-        parts = time_str.split(":")
-        
-        if len(parts) == 2:
-            return int(parts[0]) * 60 + int(parts[1])
-        elif len(parts) == 3:
-            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-        
-        return 0
     
     async def title(self, link: str, videoid: Union[bool, str] = None) -> str:
         """Get video title."""
@@ -1119,22 +1138,15 @@ class YouTubeAPI:
         songvideo: Union[bool, str] = None,
         format_id: Union[bool, str] = None,
         title: Union[bool, str] = None,
-    ) -> str:
-        """Download video/audio from YouTube."""
-        vid = videoid if videoid else extract_video_id(link)
+    ):
+        """
+        Download video/audio from YouTube.
         
+        Returns:
+            Tuple of (file_path, direct) where direct is True if downloaded, False if streaming URL
+        """
         if videoid:
             link = self.base + videoid
-        
-        if video or songvideo:
-            media_type = "video"
-        else:
-            media_type = "audio"
-        
-        if vid:
-            optimized_path = await media_download(link=link, type=media_type, title=title or "", video_id=vid)
-            if optimized_path and os.path.exists(optimized_path):
-                return optimized_path, True
         
         loop = asyncio.get_running_loop()
         cookie_file = cookie_txt_file()
@@ -1239,19 +1251,41 @@ class YouTubeAPI:
             return fpath, True
         
         elif video:
-            file_size = await check_file_size(link)
-            
-            if file_size:
-                total_size_mb = file_size / (1024 * 1024)
-                if total_size_mb > 250:
-                    result, data = await self.video(link)
-                    if result:
-                        return data, False
-                    return None, False
-            
-            downloaded_file = await loop.run_in_executor(None, video_dl)
-            return downloaded_file, True
+            # Check is_on_off for download mode
+            if await is_on_off(1):
+                # Direct download mode
+                downloaded_file = await loop.run_in_executor(None, video_dl)
+                return downloaded_file, True
+            else:
+                # Streaming URL mode
+                args = ["yt-dlp", "-g", "-f", "best[height<=?720][width<=?1280]", f"{link}"]
+                if cookie_file:
+                    args.extend(["--cookies", cookie_file])
+                
+                proc = await asyncio.create_subprocess_exec(
+                    *args,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await proc.communicate()
+                
+                if stdout:
+                    downloaded_file = stdout.decode().split("\n")[0]
+                    return downloaded_file, False
+                else:
+                    # Fallback to direct download
+                    file_size = await check_file_size(link)
+                    if not file_size:
+                        return None, False
+                    
+                    total_size_mb = file_size / (1024 * 1024)
+                    if total_size_mb > 250:
+                        return None, False
+                    
+                    downloaded_file = await loop.run_in_executor(None, video_dl)
+                    return downloaded_file, True
         
         else:
+            # Audio download
             downloaded_file = await loop.run_in_executor(None, audio_dl)
             return downloaded_file, True
