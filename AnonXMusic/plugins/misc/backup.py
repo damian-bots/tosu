@@ -135,7 +135,7 @@ async def manual_backup(_: Client, message: Message):
 async def restore_backup(_: Client, message: Message):
     if not message.reply_to_message or not message.reply_to_message.document:
         return await message.reply_text(
-            "<emoji id='5334544901428229844'>ℹ️</emoji> **Usage:** Reply to a backup ZIP file with `/restore`."
+            "<emoji id='5334544901428229844'>ℹ️</emoji> Usage: Reply to a backup ZIP file with `/restore`."
         )
     
     doc = message.reply_to_message.document
@@ -143,7 +143,7 @@ async def restore_backup(_: Client, message: Message):
         return await message.reply_text("<emoji id='5210952531676504517'>❌</emoji> Please reply to a valid `.zip` backup file.")
 
     processing = await message.reply_text(
-        "<emoji id='5017470156276761427'>🔄</emoji> **Restoring Database...**\n"
+        "<emoji id='5017470156276761427'>🔄</emoji> Restoring Database...\n"
         "Downloading and unpacking data."
     )
 
@@ -189,7 +189,7 @@ async def restore_backup(_: Client, message: Message):
 
         colls_str = ", ".join(f"`{c}`" for c in restored_colls)
         await processing.edit_text(
-            f"<emoji id='5208880351690112495'>✅</emoji> **System Restored Successfully!**\n\n"
+            f"<emoji id='5208880351690112495'>✅</emoji> System Restored Successfully!\n\n"
             f"<b>Collections Imported:</b> {len(restored_colls)}\n"
             f"<b>List:</b> {colls_str}"
         )
