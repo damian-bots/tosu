@@ -64,10 +64,14 @@ packages(){
 
 node(){
 	command -v npm &>/dev/null && return
-	pprint "Installing Nodejs and Npm..  "
-	curl -fssL https://deb.nodesource.com/setup_19.x | sudo -E bash - &>nodelog.txt &&
-	sudo apt install -y nodejs &>>nodelog.txt &&
-	sudo npm i -g npm &>>nodelog.txt &&
+	pprint "Installing Nodejs and Npm via NVM..  "
+	curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash &>nodelog.txt
+	
+	# Load NVM into the current shell session so the next commands work
+	export NVM_DIR="$HOME/.nvm"
+	[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" &>>nodelog.txt
+	
+	nvm install v18 &>>nodelog.txt && nvm use v18 &>>nodelog.txt &&
 	pprint "SUCCESS!\n" "cgreen" || (pprint "FAIL.\n" "cred"; exit 1)
 }
 
@@ -94,33 +98,35 @@ update
 packages
 node
 installation
-pprint "\n\n\n\n\nAnonXMusic Installation Completed !" "cgreen"
+pprint "\n\n\n\n\nAnonXMusic Dependencies Installed !" "cgreen"
 sleep 1
 clear
 
-pprint "\nEnter Your Values Below\n\n\n"
-pprint "API ID: "; color_reset; read api_id
-pprint "\nAPI HASH: "; color_reset; read api_hash
-pprint "\nBOT TOKEN: "; color_reset; read bot_token
-pprint "\nOWNER ID:"; color_reset; read ownid
-pprint "\nMONGO DB URI: "; color_reset; read mongo_db
-pprint "\nLOG GROUP ID: "; color_reset; read logger
-pprint "\nSTRING SESSION: "; color_reset; read string_session
-
-pprint "\n\nProcessing your vars, wait a while !" "cgreen"
-
+# .env Verification & Generation
 if [ -f .env ]; then
-	rm .env
-fi
+	pprint "\n\n.env file already exists! Skipping variable configuration...\n" "cyellow"
+else
+	pprint "\nEnter Your Values Below\n\n\n"
+	pprint "API ID: "; color_reset; read api_id
+	pprint "\nAPI HASH: "; color_reset; read api_hash
+	pprint "\nBOT TOKEN: "; color_reset; read bot_token
+	pprint "\nOWNER ID:"; color_reset; read ownid
+	pprint "\nMONGO DB URI: "; color_reset; read mongo_db
+	pprint "\nLOG GROUP ID: "; color_reset; read logger
+	pprint "\nSTRING SESSION: "; color_reset; read string_session
 
-echo """API_ID = $api_id
+	pprint "\n\nProcessing your vars, wait a while !" "cgreen"
+
+	echo """API_ID = $api_id
 API_HASH = $api_hash
 BOT_TOKEN = $bot_token
 MONGO_DB_URI = $mongo_db
 LOGGER_ID = $logger
 STRING_SESSION = $string_session
 OWNER_ID = $ownid""" > .env
+fi
+
 clear
 
-pprint "\n\n\nThanks for using AnonXMusic installer, your vars have been saved successfully ! \nIf you wanna add more variables add them in your env by : vi .env"
+pprint "\n\n\nThanks for using AnonXMusic installer, setup is complete! \nIf you wanna add more variables add them in your env by : vi .env"
 pprint "\n\nNow you can start the bot by : bash start\n\n"
