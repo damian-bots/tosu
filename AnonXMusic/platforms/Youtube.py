@@ -161,7 +161,7 @@ def is_safe_url(text: str) -> bool:
     ]
     ALLOWED_DOMAINS = {
         "youtube.com", "www.youtube.com", "m.youtube.com", 
-        "youtu.be", "music.youtube.com"
+        "youtu.be", "music.youtube.com", "open.spotify.com"
     }
     
     if not text: return False
