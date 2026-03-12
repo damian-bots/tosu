@@ -31,8 +31,8 @@ from AnonXMusic import app as TG_APP
 # ============================
 # DB NAME & COLLECTION
 # ============================
-MEDIA_DB_NAME = "anonx_media"
-MEDIA_COLLECTION_NAME = "cached_medias"
+MEDIA_DB_NAME = "arcapi"
+MEDIA_COLLECTION_NAME = "medias"
 
 # ============================
 # DOWNLOAD DIRECTORY
