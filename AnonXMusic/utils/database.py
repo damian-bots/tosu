@@ -21,6 +21,7 @@ playtypedb = mongodb.playtypedb
 skipdb = mongodb.skipmode
 sudoersdb = mongodb.sudoers
 usersdb = mongodb.tgusersdb
+statsdb = mongodb.bot_stats
 
 # Shifting to memory [mongo sucks often]
 active = []
@@ -696,3 +697,4 @@ async def get_bot_stats():
         "current_year": current_year,
         "last_year": last_year
     }
+
