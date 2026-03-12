@@ -117,7 +117,7 @@ async def get_http_session() -> aiohttp.ClientSession:
 
 def _get_media_collection():
     global _MONGO_CLIENT
-    db_uri = getattr(config, "MONGO_DB_URI", getattr(config, "DB_URI", None))
+    db_uri = config.DB_URI
     if not db_uri: return None
     if _MONGO_CLIENT is None: _MONGO_CLIENT = AsyncIOMotorClient(db_uri)
     db = _MONGO_CLIENT[MEDIA_DB_NAME]
