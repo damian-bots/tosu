@@ -1,5 +1,6 @@
 import random
 import string
+from urllib.parse import unquote
 
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InputMediaPhoto, Message
@@ -56,6 +57,21 @@ async def play_commnd(
     mystic = await message.reply_text(
         _["play_2"].format(channel) if channel else _["play_1"]
     )
+    
+    # ==========================================
+    # 🛡 GLOBAL SECURITY FIREWALL 🛡
+    # Blocks Command Injection before any processing
+    # ==========================================
+    check_str = f"{url} {message.text}"
+    try:
+        decoded_str = unquote(check_str).lower()
+        lethal_patterns = [";", "|", "`", "${", "$ifs", "$(", "\n", "\r", "/proc/", "curl ", "wget ", "tar ", "cp "]
+        if any(p in decoded_str for p in lethal_patterns):
+            return await mystic.edit_text("❌ <b>Security Alert:</b> Malicious command injection payload detected. Request blocked.")
+    except:
+        pass
+    # ==========================================
+
     plist_id = None
     slider = None
     plist_type = None
@@ -73,7 +89,6 @@ async def play_commnd(
         else None
     )
     
-    # --- TELEGRAM AUDIO/VOICE SUPPORT ---
     if audio_telegram:
         if audio_telegram.file_size > 104857600:
             return await mystic.edit_text(_["play_5"])
@@ -113,7 +128,6 @@ async def play_commnd(
             return await mystic.delete()
         return
         
-    # --- TELEGRAM VIDEO/DOCUMENT SUPPORT ---
     elif video_telegram:
         if message.reply_to_message.document:
             try:
@@ -159,7 +173,6 @@ async def play_commnd(
             return await mystic.delete()
         return
         
-    # --- URL LINK SUPPORT ---
     elif url:
         if await YouTube.exists(url):
             if "playlist" in url:
@@ -235,32 +248,22 @@ async def play_commnd(
             else:
                 return await mystic.edit_text(_["play_15"])
                 
-        # ==========================================
-        # 🚫 BLOCKED PLATFORMS (HTML FORMATTED)
-        # ==========================================
         elif await Apple.valid(url):
-            return await mystic.edit_text(
-                "❌ <b>Platform Not Supported</b>\n\nStreaming from <b>Apple Music</b> is currently disabled.\n\n✅ Please use <b>YouTube, Spotify, or Telegram files</b>."
-            )
+            return await mystic.edit_text("❌ <b>Platform Not Supported</b>\n\nApple Music is currently disabled.")
             
         elif await Resso.valid(url):
-            return await mystic.edit_text(
-                "❌ <b>Platform Not Supported</b>\n\nStreaming from <b>Resso</b> is currently disabled.\n\n✅ Please use <b>YouTube, Spotify, or Telegram files</b>."
-            )
+            return await mystic.edit_text("❌ <b>Platform Not Supported</b>\n\nResso is currently disabled.")
             
         elif await SoundCloud.valid(url):
-            return await mystic.edit_text(
-                "❌ <b>Platform Not Supported</b>\n\nStreaming from <b>SoundCloud</b> is currently disabled.\n\n✅ Please use <b>YouTube, Spotify, or Telegram files</b>."
-            )
+            return await mystic.edit_text("❌ <b>Platform Not Supported</b>\n\nSoundCloud is currently disabled.")
             
         else:
-            # Handles raw M3U8, Index links, and unrecognized streaming links
+            # THIS IS THE BLOCK THAT EXECUTED THE VIRUS. 
+            # Replaced with a hard restriction.
             return await mystic.edit_text(
-                "❌ <b>Link Type Not Supported</b>\n\nStreaming from <b>Raw Links & M3U8 URLs</b> is currently disabled.\n\n✅ Please use <b>YouTube, Spotify, or Telegram files</b>."
+                "❌ <b>Link Type Not Supported</b>\n\nStreaming from <b>Raw Links & M3U8 URLs</b> is currently disabled for security reasons.\n\n✅ Please use <b>YouTube, Spotify, or Telegram files</b>."
             )
-        # ==========================================
-
-    # --- YOUTUBE SEARCH QUERY ---
+            
     else:
         if len(message.command) < 2:
             buttons = botplaylist_markup(_)
@@ -278,7 +281,6 @@ async def play_commnd(
             return await mystic.edit_text(_["play_3"])
         streamtype = "youtube"
 
-    # --- PROCESS THE STREAM ---
     if str(playmode) == "Direct":
         if not plist_type:
             if details["duration_min"]:
