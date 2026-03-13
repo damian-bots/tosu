@@ -1,5 +1,5 @@
 # AnonXMusic/utils/Youtube.py
-# Updated: 3-Tier Hybrid Search (Smart Scrape + PySearch + yt-dlp) + Strict Firewall + Anony Regex
+# Updated: 3-Tier Hybrid Search (Smart JSON Scraper + PySearch + yt-dlp) + Strict Firewall
 
 import time
 import asyncio
@@ -169,7 +169,6 @@ def is_safe_url(text: str) -> bool:
     is_url = text.lower().startswith(("http:", "https:", "www."))
     
     if not is_url: 
-        # Text Query Firewall
         CRITICAL_SHELL = [";", "|", "$", "`", "{", "}", "\n", "\r"]
         try:
             decoded = unquote(text).lower()
@@ -202,7 +201,7 @@ def is_safe_url(text: str) -> bool:
         LOGGER.error(f"URL Validation Error: {e}")
         return False
 
-# Strict Anony Regex (No live/embed)
+# Strict Anony Regex
 YOUTUBE_REGEX = re.compile(
     r"(?:https?://)?(?:www\.|m\.|music\.)?"
     r"(?:youtube\.com/(?:watch\?v=|shorts/|playlist\?list=)|youtu\.be/)"
@@ -497,14 +496,33 @@ class YouTubeAPI:
                 if r.status != 200: return None
                 html = await r.text()
             
-            # 🔥 SMART REGEX: Targets strictly "videoRenderer" to skip Ads and Playlists
-            video_ids = re.findall(r'"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"', html)
-            seen = set()
             clean_ids = []
-            for vid in video_ids:
-                if vid not in seen:
-                    seen.add(vid)
-                    clean_ids.append(vid)
+            
+            # 🔥 1. SMART JSON PARSING (Filters out Ads and Promoted content securely)
+            match = re.search(r'(?:var ytInitialData|window\["ytInitialData"\])\s*=\s*(\{.*?\});', html)
+            if match:
+                try:
+                    data = json.loads(match.group(1))
+                    contents = data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]["sectionListRenderer"]["contents"]
+                    for section in contents:
+                        if "itemSectionRenderer" in section:
+                            for item in section["itemSectionRenderer"]["contents"]:
+                                # Only organic results are grouped under "videoRenderer"
+                                if "videoRenderer" in item:
+                                    vid = item["videoRenderer"].get("videoId")
+                                    if vid and vid not in clean_ids:
+                                        clean_ids.append(vid)
+                except Exception as e:
+                    LOGGER.error(f"JSON Parsing failed: {e}")
+
+            # 2. FALLBACK REGEX (If JSON extraction fails or YouTube structure changes)
+            if not clean_ids:
+                video_ids = re.findall(r'"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"', html)
+                seen = set()
+                for vid in video_ids:
+                    if vid not in seen:
+                        seen.add(vid)
+                        clean_ids.append(vid)
 
             if not clean_ids: return None
             if fetch_all: return clean_ids
