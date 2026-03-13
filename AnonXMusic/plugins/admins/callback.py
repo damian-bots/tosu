@@ -33,6 +33,7 @@ from config import (
     confirmer,
     votemode,
 )
+import config
 from strings import get_string
 
 checker = {}
@@ -395,3 +396,4 @@ async def markup_timer():
 
 
 asyncio.create_task(markup_timer())
+
