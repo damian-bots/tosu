@@ -95,11 +95,11 @@ async def _send_backup(zip_path: str, chat_id: int, title: str):
 
     caption = (
         f"{title}\n\n"
-        f"__Authentication successful. Data export complete.__\n\n"
-        f"<emoji id='5341492148468465410'>📂</emoji> **File:** `{os.path.basename(zip_path)}`\n"
-        f"<emoji id='5231200819986047254'>📊</emoji> **Size:** `{size_str}`\n"
-        f"<emoji id='5364233403300330811'>📅</emoji> **Date:** `{date_str}`\n"
-        f"<emoji id='5382194935057372936'>⏱</emoji> **Time:** `{time_str}`"
+        f"Authentication successful. Data export complete.\n\n"
+        f"<emoji id='5341492148468465410'>📂</emoji> File: {os.path.basename(zip_path)}\n"
+        f"<emoji id='5231200819986047254'>📊</emoji> Size: {size_str}\n"
+        f"<emoji id='5364233403300330811'>📅</emoji> Date: {date_str}\n"
+        f"<emoji id='5382194935057372936'>⏱</emoji> Time: {time_str}"
     )
     
     await app.send_document(chat_id=chat_id, document=zip_path, caption=caption)
@@ -127,7 +127,7 @@ async def manual_backup(_: Client, message: Message):
         await processing.delete()
     except Exception as e:
         await processing.edit_text(
-            f"<emoji id='5210952531676504517'>❌</emoji> **Backup Failed!**\n**Error:** `{e}`"
+            f"<emoji id='5210952531676504517'>❌</emoji> Backup Failed!\nError: {e}"
         )
         LOGGER(__name__).error(f"Manual backup failed: {e}")
 
@@ -135,12 +135,12 @@ async def manual_backup(_: Client, message: Message):
 async def restore_backup(_: Client, message: Message):
     if not message.reply_to_message or not message.reply_to_message.document:
         return await message.reply_text(
-            "<emoji id='5334544901428229844'>ℹ️</emoji> Usage: Reply to a backup ZIP file with `/restore`."
+            "<emoji id='5334544901428229844'>ℹ️</emoji> Usage: Reply to a backup ZIP file with /restore."
         )
     
     doc = message.reply_to_message.document
     if not doc.file_name.endswith(".zip"):
-        return await message.reply_text("<emoji id='5210952531676504517'>❌</emoji> Please reply to a valid `.zip` backup file.")
+        return await message.reply_text("<emoji id='5210952531676504517'>❌</emoji> Please reply to a valid .zip backup file.")
 
     processing = await message.reply_text(
         "<emoji id='5017470156276761427'>🔄</emoji> Restoring Database...\n"
