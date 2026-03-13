@@ -19,7 +19,8 @@ EXCLUDED_CHATS = {
     -1001549206010,
 }
 
-MAX_LEAVE_PER_RUN = 100
+# Explicitly named to reflect the maximum limit per individual assistant
+MAX_LEAVE_PER_ASSISTANT = 80
 
 
 def get_next_run_time() -> datetime:
@@ -53,21 +54,31 @@ async def auto_leave():
         from AnonXMusic.core.userbot import assistants
         
         for num in assistants:
-            left = 0
-            with suppress(Exception):
+            try:
                 client = await get_client(num)
+                left = 0
+                
                 async for dialog in client.get_dialogs():
+                    # Check the limit at the start of every dialog iteration for THIS assistant
+                    if left >= MAX_LEAVE_PER_ASSISTANT:
+                        break
+                        
                     if dialog.chat.type not in [ChatType.SUPERGROUP, ChatType.GROUP, ChatType.CHANNEL]:
                         continue
                     if dialog.chat.id in EXCLUDED_CHATS:
                         continue
-                    if left >= MAX_LEAVE_PER_RUN:
-                        break
                     if await is_active_chat(dialog.chat.id):
                         continue
+                        
                     with suppress(Exception):
                         await client.leave_chat(dialog.chat.id)
                         left += 1
+                        # Crucial delay: Prevents Telegram from throwing a FloodWait error
+                        await asyncio.sleep(1.5)
+                        
+            except Exception as e:
+                # Silently skip to the next assistant if this one fails to initialize
+                pass
 
 
 async def auto_end():
@@ -102,4 +113,3 @@ async def auto_end():
 # Start background tasks
 asyncio.create_task(auto_leave())
 asyncio.create_task(auto_end())
-
