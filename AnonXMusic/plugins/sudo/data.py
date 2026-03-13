@@ -62,7 +62,7 @@ async def chat_stats_command(_, message: Message):
         
         await message.reply_photo(
             photo=image_path,
-            caption=f"**Bot Growth Statistics**\nTotal Active Chats: `{total_chats}`"
+            caption=f"Bot Growth Statistics\nTotal Active Chats: {total_chats}"
         )
         await msg.delete()
         
@@ -101,7 +101,7 @@ async def chat_stats_command(_, message: Message):
         chart += f"+-----------+--------+------+------------+"
 
         await msg.edit_text(
-            f"⚠️ **Notice:** Image generation failed (`{e}`). Falling back to text chart.\n\n<code>{chart}</code>"
+            f"⚠️ Notice: Image generation failed ({e}). Falling back to text chart.\n\n<code>{chart}</code>"
         )
 
 
