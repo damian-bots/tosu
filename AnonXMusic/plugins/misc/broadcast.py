@@ -173,7 +173,12 @@ async def run_broadcast(state, targets, status_message=None):
                     if mode == "forward":
                         await content.forward(chat_id)
                     else:
-                        await content.copy(chat_id)
+                        # Pyrogram v1 vs v2 compatibility for explicitly enabling Web Previews
+                        try:
+                            await content.copy(chat_id, disable_web_page_preview=False)
+                        except TypeError:
+                            from pyrogram.types import LinkPreviewOptions
+                            await content.copy(chat_id, link_preview_options=LinkPreviewOptions(is_disabled=False))
                     sent_count += 1
 
             except FloodWait as e:
@@ -185,8 +190,14 @@ async def run_broadcast(state, targets, status_message=None):
                     await asyncio.sleep(e.value)
                     # Retry once after sleep
                     try:
-                        if mode == "forward": await content.forward(chat_id)
-                        else: await content.copy(chat_id)
+                        if mode == "forward": 
+                            await content.forward(chat_id)
+                        else: 
+                            try:
+                                await content.copy(chat_id, disable_web_page_preview=False)
+                            except TypeError:
+                                from pyrogram.types import LinkPreviewOptions
+                                await content.copy(chat_id, link_preview_options=LinkPreviewOptions(is_disabled=False))
                         sent_count += 1
                     except:
                         failed_count += 1
@@ -472,4 +483,3 @@ async def auto_clean():
 
 asyncio.create_task(auto_clean())
 asyncio.create_task(auto_resume_check())
-
