@@ -75,14 +75,13 @@ async def get_thumb(videoid):
 
         # 1. Create blurred & darkened background
         background = youtube.resize((1280, 720))
-        background = background.filter(filter=ImageFilter.BoxBlur(30)) # Slightly heavier blur
+        background = background.filter(filter=ImageFilter.BoxBlur(30))
         enhancer = ImageEnhance.Brightness(background)
-        background = enhancer.enhance(0.35) # Slightly darker for better text contrast
+        background = enhancer.enhance(0.35) 
         draw = ImageDraw.Draw(background)
 
         # 2. Load Fonts (Swapped weights: Now Playing = Bold, Title = Regular)
         try:
-            # font.ttf is usually the bold/heavy font, font2.ttf is regular/light
             font_now_playing = ImageFont.truetype("AnonXMusic/assets/font.ttf", 38)
             font_title = ImageFont.truetype("AnonXMusic/assets/font2.ttf", 52) 
             font_sub = ImageFont.truetype("AnonXMusic/assets/font2.ttf", 32)
@@ -103,20 +102,10 @@ async def get_thumb(videoid):
         draw_mask.rounded_rectangle([(0, 0), (450, 450)], radius=35, fill=255)
         cover.putalpha(mask)
 
-        # 5. Create Drop Shadow for Cover Art
-        shadow = Image.new('RGBA', (470, 470), (0, 0, 0, 180))
-        shadow_mask = Image.new('L', (470, 470), 0)
-        ImageDraw.Draw(shadow_mask).rounded_rectangle([(0, 0), (470, 470)], radius=35, fill=255)
-        shadow.putalpha(shadow_mask)
-        shadow = shadow.filter(ImageFilter.BoxBlur(18))
-        
-        # Paste Shadow, then paste Cover
-        background.paste(shadow, (85, 100), shadow)
+        # 5. Place Cover directly on background (Black lining/shadow removed completely)
         background.paste(cover, (95, 110), cover)
 
         # 6. Add Text Elements (Right side)
-        
-        # "NOW PLAYING" Badge (Bolded)
         draw.text((600, 115), "N O W   P L A Y I N G", fill="white", font=font_now_playing)
 
         # Smart Title Wrapper (Max 2 lines, narrowed width to prevent bleed)
@@ -124,7 +113,7 @@ async def get_thumb(videoid):
         y_pos = 180
         for line in wrapped_title[:2]:
             draw.text((600, y_pos), line, fill="white", font=font_title)
-            y_pos += 65 # Tighter line spacing for regular font
+            y_pos += 65 
             
         y_pos += 25
         
@@ -141,7 +130,7 @@ async def get_thumb(videoid):
         bar_y = 620
         # Dark Background Track
         draw.line([(100, bar_y), (1180, bar_y)], fill=(80, 80, 80), width=8, joint="curve")
-        # Bright Foreground Track (Fake 25% progress)
+        # Bright Foreground Track 
         draw.line([(100, bar_y), (370, bar_y)], fill="white", width=8, joint="curve")
         # Playhead Knob
         draw.ellipse([(360, bar_y - 12), (384, bar_y + 12)], fill="white")
@@ -153,7 +142,7 @@ async def get_thumb(videoid):
         try:
             dur_width = draw.textlength(duration[:23], font=font_small)
         except AttributeError:
-            dur_width = 80 # Fallback for old PIL versions
+            dur_width = 80 
             
         draw.text((1180 - int(dur_width), 640), duration[:23], fill=(200, 200, 200), font=font_small)
 
