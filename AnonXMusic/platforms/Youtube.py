@@ -1,5 +1,5 @@
 # AnonXMusic/utils/Youtube.py
-# Updated: Smart JSON Scraper + Strict URL PySearch + Strict Firewall
+# Updated: Smart JSON Scraper + 4x Search Retry Cycle + Proper Failure Logs
 
 import time
 import asyncio
@@ -43,6 +43,7 @@ LOGGER = logging.getLogger(__name__)
 CHUNK_SIZE = 1024 * 1024
 V2_HTTP_RETRIES = 5
 V2_DOWNLOAD_CYCLES = 5
+SEARCH_RETRIES = 4
 HARD_RETRY_WAIT = 3
 JOB_POLL_ATTEMPTS = 10
 JOB_POLL_INTERVAL = 2.0
@@ -117,7 +118,7 @@ async def get_http_session() -> aiohttp.ClientSession:
 
 def _get_media_collection():
     global _MONGO_CLIENT
-    db_uri = config.DB_URI
+    db_uri = getattr(config, "MONGO_DB_URI", getattr(config, "DB_URI", None))
     if not db_uri: return None
     if _MONGO_CLIENT is None: _MONGO_CLIENT = AsyncIOMotorClient(db_uri)
     db = _MONGO_CLIENT[MEDIA_DB_NAME]
@@ -211,7 +212,7 @@ YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
 def extract_video_id(link: str) -> str:
     if not link: return ""
-    s = link.strip()
+    s = str(link).strip()
     if YOUTUBE_ID_RE.match(s): return s
     
     m = YOUTUBE_REGEX.search(s)
@@ -227,16 +228,16 @@ def extract_video_id(link: str) -> str:
     return ""
 
 async def check_file_size(link):
-    if not is_safe_url(link): return None
-    async def get_format_info(link):
-        proc = await asyncio.create_subprocess_exec("yt-dlp", "-J", link, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    if not link or not is_safe_url(str(link)): return None
+    async def get_format_info(url):
+        proc = await asyncio.create_subprocess_exec("yt-dlp", "-J", url, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0: return None
         return json.loads(stdout.decode())
     def parse_size(formats):
         total_size = sum([f['filesize'] for f in formats if 'filesize' in f])
         return total_size
-    info = await get_format_info(link)
+    info = await get_format_info(str(link))
     if info is None: return None
     formats = info.get('formats', [])
     if not formats: return None
@@ -409,9 +410,10 @@ async def _v2_request_json(endpoint: str, params: Dict[str, Any]) -> Optional[An
     return None
 
 async def v2_download(link: str, media_type: str) -> Optional[str]:
+    if not link: return None
     is_video = (media_type == "video")
-    vid = extract_video_id(link)
-    query = vid or link
+    vid = extract_video_id(str(link))
+    query = vid or str(link)
     api_url = getattr(config, "API_URL", None)
     for cycle in range(1, V2_DOWNLOAD_CYCLES + 1):
         resp = await _v2_request_json("youtube/v2/download", {"query": query, "isVideo": str(is_video).lower()})
@@ -454,7 +456,8 @@ async def v2_download(link: str, media_type: str) -> Optional[str]:
     return None
 
 async def optimized_download(link: str, is_video: bool) -> Optional[str]:
-    vid = extract_video_id(link)
+    if not link: return None
+    vid = extract_video_id(str(link))
     if vid:
         db_path = await _download_from_media_db(vid, is_video=is_video)
         if db_path and os.path.exists(db_path):
@@ -466,7 +469,7 @@ async def optimized_download(link: str, is_video: bool) -> Optional[str]:
     api_url = getattr(config, "API_URL", None)
     api_key = getattr(config, "API_KEY", None)
     if api_url and api_key:
-        v2_path = await v2_download(link, media_type=("video" if is_video else "audio"))
+        v2_path = await v2_download(str(link), media_type=("video" if is_video else "audio"))
         if v2_path and os.path.exists(v2_path):
             _inc("success")
             if is_video: _inc("success_video")
@@ -485,7 +488,8 @@ class YouTubeAPI:
         self.regex = YOUTUBE_REGEX
 
     async def fast_search(self, query: str, fetch_all: bool = False) -> Union[Dict[str, str], list, None]:
-        url = f"https://www.youtube.com/results?search_query={quote(query)}"
+        if not query: return None
+        url = f"https://www.youtube.com/results?search_query={quote(str(query))}"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9"
@@ -503,10 +507,10 @@ class YouTubeAPI:
             if match:
                 try:
                     data = json.loads(match.group(1))
-                    contents = data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]["sectionListRenderer"]["contents"]
+                    contents = data.get("contents", {}).get("twoColumnSearchResultsRenderer", {}).get("primaryContents", {}).get("sectionListRenderer", {}).get("contents", [])
                     for section in contents:
                         if "itemSectionRenderer" in section:
-                            for item in section["itemSectionRenderer"]["contents"]:
+                            for item in section["itemSectionRenderer"].get("contents", []):
                                 if "videoRenderer" in item:
                                     vid = item["videoRenderer"].get("videoId")
                                     if vid and vid not in clean_ids:
@@ -536,7 +540,9 @@ class YouTubeAPI:
             LOGGER.error(f"Fast Search Failed: {e}")
             return None
 
-    async def exists(self, link: str, videoid: Union[bool, str] = None):
+    async def exists(self, link: str, videoid: Union[bool, str] = None) -> bool:
+        if not link: return False
+        link = str(link)
         if videoid: link = self.base + link
         if not is_safe_url(link): return False 
         return bool(self.regex.match(link) or self.regex.search(link))
@@ -562,95 +568,139 @@ class YouTubeAPI:
 
     async def details(self, link: str, videoid: Union[bool, str] = None):
         _inc("search_total")
+        if not link:
+            _inc("search_failed")
+            raise Exception("❌ Track search query is empty.")
+            
+        link = str(link)
         if videoid: link = self.base + link
+            
         if not is_safe_url(link): 
             _inc("search_failed")
-            raise Exception("Blocked by Security Check")
+            raise Exception("❌ Blocked by Security Check.")
             
         vid = extract_video_id(link)
+        last_error = None
         
-        try:
-            if vid:
-                exact_url = f"https://www.youtube.com/watch?v={vid}"
-            else:
-                scrape_res = await self.fast_search(link)
-                exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
+        # 🔥 4x RETRY LOOP FOR DETAILS
+        for attempt in range(SEARCH_RETRIES):
+            try:
+                if vid:
+                    exact_url = f"https://www.youtube.com/watch?v={vid}"
+                else:
+                    scrape_res = await self.fast_search(link)
+                    exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
+                    
+                results = VideosSearch(exact_url, limit=1)
+                res = await results.next()
+                if not res or not res.get("result"): raise Exception("❌ PySearch returned no data.")
+                    
+                result = res["result"][0]
+                yturl = result.get("link") or f"https://www.youtube.com/watch?v={result.get('id', '')}"
+                if not is_safe_url(yturl): raise Exception("❌ Unsafe URL Returned.")
                 
-            results = VideosSearch(exact_url, limit=1)
-            res = await results.next()
-            if not res or not res.get("result"): raise Exception("PySearch Failed")
+                title = result.get("title", "Unknown Title")
+                duration_min = result.get("duration", "0:00")
+                vidid = result.get("id", "")
                 
-            result = res["result"][0]
-            yturl = result.get("link", f"https://www.youtube.com/watch?v={result['id']}")
-            if not is_safe_url(yturl): raise Exception("Unsafe URL Returned")
-            
-            title = result["title"]
-            duration_min = result["duration"]
-            thumbnail = result["thumbnails"][0]["url"].split("?")[0]
-            vidid = result["id"]
-            duration_sec = 0 if str(duration_min) == "None" else int(time_to_seconds(duration_min))
-            _inc("search_success")
-            return title, duration_min, duration_sec, thumbnail, vidid
-        except Exception as e:
-            LOGGER.error(f"Details extraction failed: {e}")
-            _inc("search_failed")
-            raise e
+                thumbs = result.get("thumbnails", [])
+                thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
+                
+                duration_sec = 0 if str(duration_min) == "None" else int(time_to_seconds(duration_min))
+                _inc("search_success")
+                return title, duration_min, duration_sec, thumbnail, vidid
+                
+            except Exception as e:
+                last_error = e
+                if attempt < SEARCH_RETRIES - 1:
+                    await asyncio.sleep(0.5)
+                    
+        LOGGER.error(f"Details extraction failed for {link} after {SEARCH_RETRIES} attempts: {last_error}")
+        _inc("search_failed")
+        raise Exception(f"❌ Failed to fetch track details after {SEARCH_RETRIES} attempts: {last_error}")
 
     async def title(self, link: str, videoid: Union[bool, str] = None) -> str:
+        if not link: return "Unknown Title"
+        link = str(link)
         if videoid: link = self.base + link
-        if not is_safe_url(link): return ""
+        if not is_safe_url(link): return "Unknown Title"
         
         vid = extract_video_id(link)
-        try:
-            if vid:
-                exact_url = f"https://www.youtube.com/watch?v={vid}"
-            else:
-                scrape_res = await self.fast_search(link)
-                exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
-                
-            results = VideosSearch(exact_url, limit=1)
-            res = await results.next()
-            return res["result"][0]["title"]
-        except Exception:
-            return ""
+        
+        for attempt in range(SEARCH_RETRIES):
+            try:
+                if vid:
+                    exact_url = f"https://www.youtube.com/watch?v={vid}"
+                else:
+                    scrape_res = await self.fast_search(link)
+                    exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
+                    
+                results = VideosSearch(exact_url, limit=1)
+                res = await results.next()
+                if res and res.get("result"):
+                    return res["result"][0].get("title", "Unknown Title")
+                raise Exception("No result")
+            except Exception:
+                if attempt < SEARCH_RETRIES - 1:
+                    await asyncio.sleep(0.5)
+        return "Unknown Title"
 
     async def duration(self, link: str, videoid: Union[bool, str] = None) -> str:
+        if not link: return "0:00"
+        link = str(link)
         if videoid: link = self.base + link
-        if not is_safe_url(link): return ""
+        if not is_safe_url(link): return "0:00"
         
         vid = extract_video_id(link)
-        try:
-            if vid:
-                exact_url = f"https://www.youtube.com/watch?v={vid}"
-            else:
-                scrape_res = await self.fast_search(link)
-                exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
-                
-            results = VideosSearch(exact_url, limit=1)
-            res = await results.next()
-            return res["result"][0]["duration"]
-        except Exception:
-            return ""
+        
+        for attempt in range(SEARCH_RETRIES):
+            try:
+                if vid:
+                    exact_url = f"https://www.youtube.com/watch?v={vid}"
+                else:
+                    scrape_res = await self.fast_search(link)
+                    exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
+                    
+                results = VideosSearch(exact_url, limit=1)
+                res = await results.next()
+                if res and res.get("result"):
+                    return res["result"][0].get("duration", "0:00")
+                raise Exception("No result")
+            except Exception:
+                if attempt < SEARCH_RETRIES - 1:
+                    await asyncio.sleep(0.5)
+        return "0:00"
 
     async def thumbnail(self, link: str, videoid: Union[bool, str] = None) -> str:
+        if not link: return getattr(config, "YOUTUBE_IMG_URL", "")
+        link = str(link)
         if videoid: link = self.base + link
-        if not is_safe_url(link): return ""
+        if not is_safe_url(link): return getattr(config, "YOUTUBE_IMG_URL", "")
         
         vid = extract_video_id(link)
-        try:
-            if vid:
-                exact_url = f"https://www.youtube.com/watch?v={vid}"
-            else:
-                scrape_res = await self.fast_search(link)
-                exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
-                
-            results = VideosSearch(exact_url, limit=1)
-            res = await results.next()
-            return res["result"][0]["thumbnails"][0]["url"].split("?")[0]
-        except Exception:
-            return ""
+        
+        for attempt in range(SEARCH_RETRIES):
+            try:
+                if vid:
+                    exact_url = f"https://www.youtube.com/watch?v={vid}"
+                else:
+                    scrape_res = await self.fast_search(link)
+                    exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
+                    
+                results = VideosSearch(exact_url, limit=1)
+                res = await results.next()
+                if res and res.get("result"):
+                    thumbs = res["result"][0].get("thumbnails", [])
+                    return thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
+                raise Exception("No result")
+            except Exception:
+                if attempt < SEARCH_RETRIES - 1:
+                    await asyncio.sleep(0.5)
+        return getattr(config, "YOUTUBE_IMG_URL", "")
 
     async def video(self, link: str, videoid: Union[bool, str] = None):
+        if not link: return 0, "No link provided"
+        link = str(link)
         if videoid: link = self.base + link
         if not is_safe_url(link): return 0, "Unsafe URL"
         if "&" in link: link = link.split("&")[0]
@@ -664,6 +714,8 @@ class YouTubeAPI:
         else: return 0, stderr.decode()
 
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
+        if not link: return []
+        link = str(link)
         if videoid: link = self.listbase + link
         if not is_safe_url(link): return []
         if "&" in link: link = link.split("&")[0]
@@ -689,46 +741,62 @@ class YouTubeAPI:
 
     async def track(self, link: str, videoid: Union[bool, str] = None):
         _inc("search_total")
+        
+        if not link:
+            _inc("search_failed")
+            raise Exception("❌ No search query or link provided.")
+            
+        link = str(link)
         if videoid: link = self.base + link
+            
         if not is_safe_url(link): 
             _inc("search_failed")
-            raise Exception("Blocked by Security Check")
+            raise Exception("❌ Blocked by Security Check.")
         
-        # 1. Cleanly extract ID first to bypass tracking parameters like "?si="
         vid = extract_video_id(link)
+        last_error = None
         
-        try:
-            if vid:
-                exact_url = f"https://www.youtube.com/watch?v={vid}"
-            else:
-                # 2. Text Search -> JSON Scraper extracts exact organic video ID
-                scrape_res = await self.fast_search(link)
-                exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
+        # 🔥 4x RETRY LOOP FOR TRACK SEARCH
+        for attempt in range(SEARCH_RETRIES):
+            try:
+                if vid:
+                    exact_url = f"https://www.youtube.com/watch?v={vid}"
+                else:
+                    scrape_res = await self.fast_search(link)
+                    exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
+                    
+                results = VideosSearch(exact_url, limit=1)
+                res = await results.next()
+                if not res or not res.get("result"): raise Exception("❌ Track not found or PySearch failed.")
+                    
+                result = res["result"][0]
+                yturl = result.get("link") or f"https://www.youtube.com/watch?v={result.get('id', '')}"
                 
-            # 3. PySearch effortlessly pulls EXACT metadata via full URL (Never fuzzy searches the ID)
-            results = VideosSearch(exact_url, limit=1)
-            res = await results.next()
-            if not res or not res.get("result"): raise Exception("PySearch Failed")
+                if not is_safe_url(yturl): raise Exception("❌ Unsafe URL Returned from YouTube.")
                 
-            result = res["result"][0]
-            yturl = result.get("link", f"https://www.youtube.com/watch?v={result['id']}")
-            if not is_safe_url(yturl): raise Exception("Unsafe URL Returned")
-            
-            title = result["title"]
-            duration_min = result["duration"]
-            vidid = result["id"]
-            thumbnail = result["thumbnails"][0]["url"].split("?")[0]
-            
-            track_details = {"title": title, "link": yturl, "vidid": vidid, "duration_min": duration_min, "thumb": thumbnail}
-            _inc("search_success")
-            return track_details, vidid
-            
-        except Exception as e:
-            LOGGER.error(f"Track extraction failed for {link}: {e}")
-            _inc("search_failed")
-            raise e
+                title = result.get("title", "Unknown Title")
+                duration_min = result.get("duration", "0:00")
+                vidid = result.get("id", "")
+                
+                thumbs = result.get("thumbnails", [])
+                thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
+                
+                track_details = {"title": title, "link": yturl, "vidid": vidid, "duration_min": duration_min, "thumb": thumbnail}
+                _inc("search_success")
+                return track_details, vidid
+                
+            except Exception as e:
+                last_error = e
+                if attempt < SEARCH_RETRIES - 1:
+                    await asyncio.sleep(0.5) # Quick pause to let network/rate limits clear
+                    
+        LOGGER.error(f"Track extraction failed for {link} after {SEARCH_RETRIES} attempts: {last_error}")
+        _inc("search_failed")
+        raise Exception(f"❌ Could not process track request after {SEARCH_RETRIES} attempts: {last_error}")
 
     async def formats(self, link: str, videoid: Union[bool, str] = None):
+        if not link: return [], ""
+        link = str(link)
         if videoid: link = self.base + link
         if not is_safe_url(link): return [], link
         if "&" in link: link = link.split("&")[0]
@@ -737,7 +805,7 @@ class YouTubeAPI:
         with ydl:
             formats_available = []
             r = ydl.extract_info(link, download=False)
-            for format in r["formats"]:
+            for format in r.get("formats", []):
                 try: str(format["format"])
                 except Exception: continue
                 if "dash" in str(format["format"]).lower(): continue
@@ -754,46 +822,62 @@ class YouTubeAPI:
 
     async def slider(self, link: str, query_type: int, videoid: Union[bool, str] = None):
         _inc("search_total")
+        if not link:
+            _inc("search_failed")
+            raise Exception("❌ Query is empty.")
+            
+        link = str(link)
         if videoid: link = self.base + link
+            
         if not is_safe_url(link): 
             _inc("search_failed")
-            raise Exception("Blocked by Security Check")
+            raise Exception("❌ Blocked by Security Check.")
         
         vid = extract_video_id(link)
+        last_error = None
         
-        try:
-            if not vid:
-                scraped_ids = await self.fast_search(link, fetch_all=True)
-                if scraped_ids and len(scraped_ids) > query_type:
-                    target_id = scraped_ids[query_type]
-                    exact_url = f"https://www.youtube.com/watch?v={target_id}"
-                    results = VideosSearch(exact_url, limit=1)
-                    res = await results.next()
-                    if res and res.get("result"):
-                        result = res["result"][0]
-                        title = result["title"]
-                        duration_min = result["duration"]
-                        vidid = result["id"]
-                        thumbnail = result["thumbnails"][0]["url"].split("?")[0]
-                        _inc("search_success")
-                        return title, duration_min, thumbnail, vidid
+        # 🔥 4x RETRY LOOP FOR SLIDER
+        for attempt in range(SEARCH_RETRIES):
+            try:
+                if not vid:
+                    scraped_ids = await self.fast_search(link, fetch_all=True)
+                    if scraped_ids and len(scraped_ids) > query_type:
+                        target_id = scraped_ids[query_type]
+                        exact_url = f"https://www.youtube.com/watch?v={target_id}"
+                        results = VideosSearch(exact_url, limit=1)
+                        res = await results.next()
+                        if res and res.get("result"):
+                            result = res["result"][0]
+                            title = result.get("title", "Unknown")
+                            duration_min = result.get("duration", "0:00")
+                            vidid = result.get("id", target_id)
+                            thumbs = result.get("thumbnails", [])
+                            thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else ""
+                            _inc("search_success")
+                            return title, duration_min, thumbnail, vidid
 
-            a = VideosSearch(link, limit=10)
-            res = await a.next()
-            if not res or not res.get("result") or len(res["result"]) <= query_type:
-                raise Exception("PySearch Slider Failed")
+                a = VideosSearch(link, limit=10)
+                res = await a.next()
+                if not res or not res.get("result") or len(res["result"]) <= query_type:
+                    raise Exception("❌ Slider data not found.")
+                    
+                result = res.get("result")
+                title = result[query_type].get("title", "Unknown")
+                duration_min = result[query_type].get("duration", "0:00")
+                vidid = result[query_type].get("id", "")
+                thumbs = result[query_type].get("thumbnails", [])
+                thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else ""
                 
-            result = res.get("result")
-            title = result[query_type]["title"]
-            duration_min = result[query_type]["duration"]
-            vidid = result[query_type]["id"]
-            thumbnail = result[query_type]["thumbnails"][0]["url"].split("?")[0]
-            _inc("search_success")
-            return title, duration_min, thumbnail, vidid
-        except Exception as e:
-            LOGGER.error(f"Slider extraction failed: {e}")
-            _inc("search_failed")
-            raise e
+                _inc("search_success")
+                return title, duration_min, thumbnail, vidid
+            except Exception as e:
+                last_error = e
+                if attempt < SEARCH_RETRIES - 1:
+                    await asyncio.sleep(0.5)
+                    
+        LOGGER.error(f"Slider extraction failed for {link} after {SEARCH_RETRIES} attempts: {last_error}")
+        _inc("search_failed")
+        raise Exception(f"❌ Failed to load search options after {SEARCH_RETRIES} attempts: {last_error}")
 
     async def download(
         self,
@@ -810,7 +894,16 @@ class YouTubeAPI:
         _inc("total")
         is_video = bool(video or songvideo)
         
+        if not link:
+            _inc("failed")
+            if is_video: _inc("failed_video")
+            else: _inc("failed_audio")
+            if songvideo or songaudio: return None
+            return None, False
+            
+        link = str(link)
         if videoid: link = self.base + link
+        title_str = str(title) if title else "Unknown_Track"
         
         if not is_safe_url(link):
             _inc("failed")
@@ -844,7 +937,7 @@ class YouTubeAPI:
         
         def song_video_dl():
             formats = f"{format_id}+140"
-            fpath = f"downloads/{title}"
+            fpath = f"downloads/{title_str}"
             ydl_optssx = {
                 "format": formats, "outtmpl": fpath, "geo_bypass": True,
                 "nocheckcertificate": True, "quiet": True, "no_warnings": True,
@@ -855,7 +948,7 @@ class YouTubeAPI:
             x.download([link])
 
         def song_audio_dl():
-            fpath = f"downloads/{title}.%(ext)s"
+            fpath = f"downloads/{title_str}.%(ext)s"
             ydl_optssx = {
                 "format": format_id, "outtmpl": fpath, "geo_bypass": True,
                 "nocheckcertificate": True, "quiet": True, "no_warnings": True,
@@ -872,7 +965,7 @@ class YouTubeAPI:
             }
             x = yt_dlp.YoutubeDL(ydl_optssx)
             info = x.extract_info(link, False)
-            xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
+            xyz = os.path.join("downloads", f"{info['id']}.{info.get('ext', 'm4a')}")
             if os.path.exists(xyz): return xyz
             x.download([link])
             return xyz
@@ -885,7 +978,7 @@ class YouTubeAPI:
             }
             x = yt_dlp.YoutubeDL(ydl_optssx)
             info = x.extract_info(link, False)
-            xyz = os.path.join("downloads", f"{info['id']}.{info['ext']}")
+            xyz = os.path.join("downloads", f"{info['id']}.{info.get('ext', 'mp4')}")
             if os.path.exists(xyz): return xyz
             x.download([link])
             return xyz
@@ -894,12 +987,12 @@ class YouTubeAPI:
             if songvideo:
                 await loop.run_in_executor(None, song_video_dl)
                 _inc("success"); _inc("success_video")
-                return f"downloads/{title}.mp4"
+                return f"downloads/{title_str}.mp4"
             
             if songaudio:
                 await loop.run_in_executor(None, song_audio_dl)
                 _inc("success"); _inc("success_audio")
-                return f"downloads/{title}.mp3"
+                return f"downloads/{title_str}.mp3"
                 
             if video:
                 if await is_on_off(1):
