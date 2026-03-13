@@ -1,5 +1,5 @@
 # AnonXMusic/utils/Youtube.py
-# Updated: 3-Tier Hybrid Search + Strict Youtube(38) Global Firewall + Telemetry + Strict Anony Regex
+# Updated: Pure PySearch + yt-dlp Fallback + Strict Youtube(38) Global Firewall + Telemetry + Strict Anony Regex
 
 import time
 import asyncio
@@ -11,7 +11,7 @@ import random
 import logging
 from typing import Union, Dict, Optional, Any
 from pathlib import Path
-from urllib.parse import urlparse, unquote, quote
+from urllib.parse import urlparse, unquote
 
 import aiofiles
 import aiohttp
@@ -490,39 +490,6 @@ class YouTubeAPI:
         # Uses the integrated anony regex
         self.regex = YOUTUBE_REGEX
 
-    async def fast_search(self, query: str, fetch_all: bool = False) -> Union[Dict[str, str], list, None]:
-        url = f"https://www.youtube.com/results?search_query={quote(query)}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9"
-        }
-        try:
-            session = await get_http_session()
-            async with session.get(url, headers=headers, timeout=7) as r:
-                if r.status != 200: return None
-                html = await r.text()
-            
-            video_ids = re.findall(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)
-            seen = set()
-            clean_ids = []
-            for vid in video_ids:
-                if vid not in seen:
-                    seen.add(vid)
-                    clean_ids.append(vid)
-
-            if not clean_ids: return None
-            if fetch_all: return clean_ids
-
-            video_id = clean_ids[0]
-            return {
-                "video_id": video_id,
-                "url": f"https://www.youtube.com/watch?v={video_id}",
-                "thumbnail": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
-            }
-        except Exception as e:
-            LOGGER.error(f"Fast Search Failed: {e}")
-            return None
-
     async def _get_metadata_ytdlp(self, query: str) -> dict:
         loop = asyncio.get_running_loop()
         def extract():
@@ -602,16 +569,7 @@ class YouTubeAPI:
         
         is_url = link.startswith(("http:", "https:", "www."))
         search_query = link
-        ytdlp_query = link
-        
-        if not is_url:
-            scrape_res = await self.fast_search(link)
-            if scrape_res: 
-                search_query = scrape_res["video_id"]
-                ytdlp_query = scrape_res["url"]
-            else:
-                search_query = link
-                ytdlp_query = f"ytsearch1:{link}"
+        ytdlp_query = link if is_url else f"ytsearch1:{link}"
                 
         try:
             results = VideosSearch(search_query, limit=1)
@@ -646,16 +604,7 @@ class YouTubeAPI:
         
         is_url = link.startswith(("http:", "https:", "www."))
         search_query = link
-        ytdlp_query = link
-        
-        if not is_url:
-            scrape_res = await self.fast_search(link)
-            if scrape_res: 
-                search_query = scrape_res["video_id"]
-                ytdlp_query = scrape_res["url"]
-            else:
-                search_query = link
-                ytdlp_query = f"ytsearch1:{link}"
+        ytdlp_query = link if is_url else f"ytsearch1:{link}"
             
         try:
             results = VideosSearch(search_query, limit=1)
@@ -677,16 +626,7 @@ class YouTubeAPI:
         
         is_url = link.startswith(("http:", "https:", "www."))
         search_query = link
-        ytdlp_query = link
-        
-        if not is_url:
-            scrape_res = await self.fast_search(link)
-            if scrape_res: 
-                search_query = scrape_res["video_id"]
-                ytdlp_query = scrape_res["url"]
-            else:
-                search_query = link
-                ytdlp_query = f"ytsearch1:{link}"
+        ytdlp_query = link if is_url else f"ytsearch1:{link}"
             
         try:
             results = VideosSearch(search_query, limit=1)
@@ -708,16 +648,7 @@ class YouTubeAPI:
         
         is_url = link.startswith(("http:", "https:", "www."))
         search_query = link
-        ytdlp_query = link
-        
-        if not is_url:
-            scrape_res = await self.fast_search(link)
-            if scrape_res: 
-                search_query = scrape_res["video_id"]
-                ytdlp_query = scrape_res["url"]
-            else:
-                search_query = link
-                ytdlp_query = f"ytsearch1:{link}"
+        ytdlp_query = link if is_url else f"ytsearch1:{link}"
             
         try:
             results = VideosSearch(search_query, limit=1)
@@ -779,16 +710,7 @@ class YouTubeAPI:
         
         is_url = link.startswith(("http:", "https:", "www."))
         search_query = link
-        ytdlp_query = link
-        
-        if not is_url:
-            scrape_res = await self.fast_search(link)
-            if scrape_res: 
-                search_query = scrape_res["video_id"]
-                ytdlp_query = scrape_res["url"]
-            else:
-                search_query = link
-                ytdlp_query = f"ytsearch1:{link}"
+        ytdlp_query = link if is_url else f"ytsearch1:{link}"
                 
         try:
             results = VideosSearch(search_query, limit=1)
@@ -861,24 +783,6 @@ class YouTubeAPI:
         ytdlp_query = link if is_url else f"ytsearch10:{link}"
         
         try:
-            if not is_url:
-                scraped_ids = await self.fast_search(link, fetch_all=True)
-                if scraped_ids and len(scraped_ids) > query_type:
-                    target_id = scraped_ids[query_type]
-                    results = VideosSearch(target_id, limit=1)
-                    res = await results.next()
-                    if res and res.get("result"):
-                        result = res["result"][0]
-                        yturl = result.get("link", f"https://www.youtube.com/watch?v={result['id']}")
-                        if not is_safe_url(yturl): raise Exception("Unsafe URL")
-                        
-                        title = result["title"]
-                        duration_min = result["duration"]
-                        vidid = result["id"]
-                        thumbnail = result["thumbnails"][0]["url"].split("?")[0]
-                        _inc("search_success")
-                        return title, duration_min, thumbnail, vidid
-
             a = VideosSearch(link, limit=10)
             res = await a.next()
             if not res or not res.get("result") or len(res["result"]) <= query_type:
