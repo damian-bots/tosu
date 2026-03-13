@@ -19,7 +19,7 @@ EXCLUDED_CHATS = {
     -1001549206010,
 }
 
-MAX_LEAVE_PER_RUN = 80
+MAX_LEAVE_PER_RUN = 100
 
 
 def get_next_run_time() -> datetime:
@@ -102,3 +102,4 @@ async def auto_end():
 # Start background tasks
 asyncio.create_task(auto_leave())
 asyncio.create_task(auto_end())
+
