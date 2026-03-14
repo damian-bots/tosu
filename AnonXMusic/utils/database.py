@@ -23,6 +23,7 @@ skipdb = mongodb.skipmode
 sudoersdb = mongodb.sudoers
 usersdb = mongodb.tgusersdb
 statsdb = mongodb.bot_stats
+searchdb = mongodb.search_cache
 
 # Shifting to memory [mongo sucks often]
 active = []
@@ -39,7 +40,58 @@ pause = {}
 playmode = {}
 playtype = {}
 skipmode = {}
+search_cache = {}
 
+async def get_search_cache(query: str):
+    if not query: return None
+    query_key = query.lower().strip()
+    
+    if query_key in search_cache:
+        return search_cache[query_key]
+        
+    doc = await searchdb.find_one({
+        "$or": [
+            {"query": query_key}, 
+            {"video_id": query_key}
+        ]
+    })
+    
+    if doc:
+        data = {
+            "video_id": doc.get("video_id"),
+            "title": doc.get("title"),
+            "duration": doc.get("duration"),
+            "thumbnail": doc.get("thumbnail"),
+            "url": doc.get("url")
+        }
+        if len(search_cache) > 5000:
+            search_cache.clear()
+        search_cache[query_key] = data
+        return data
+        
+    return None
+
+async def set_search_cache(query: str, data: dict):
+    if not query or not data: return
+    query_key = query.lower().strip()
+    
+    if len(search_cache) > 5000:
+        search_cache.clear()
+    search_cache[query_key] = data
+    
+    await searchdb.update_one(
+        {"query": query_key},
+        {"$set": {
+            "query": query_key,
+            "video_id": data.get("video_id"),
+            "title": data.get("title"),
+            "duration": data.get("duration"),
+            "thumbnail": data.get("thumbnail"),
+            "url": data.get("url"),
+            "updated_at": datetime.now()
+        }},
+        upsert=True
+    )
 
 async def get_assistant_number(chat_id: int) -> str:
     assistant = assistantdict.get(chat_id)
@@ -698,5 +750,3 @@ async def get_bot_stats():
         "current_year": current_year,
         "last_year": last_year
     }
-
-
