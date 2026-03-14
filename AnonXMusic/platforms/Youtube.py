@@ -1,5 +1,5 @@
 # AnonXMusic/utils/Youtube.py
-# Updated: Smart JSON Scraper + 4x Search Retry Cycle + Proper Failure Logs
+# Updated: Smart JSON Extraction + In-Memory Caching (Option 1 & 2)
 
 import time
 import asyncio
@@ -22,7 +22,7 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.__future__ import VideosSearch
 
-from AnonXMusic.utils.database import is_on_off
+from AnonXMusic.utils.database import is_on_off, get_search_cache, set_search_cache
 from AnonXMusic.utils.formatters import time_to_seconds
 
 import config
@@ -118,7 +118,7 @@ async def get_http_session() -> aiohttp.ClientSession:
 
 def _get_media_collection():
     global _MONGO_CLIENT
-    db_uri = config.DB_URI
+    db_uri = getattr(config, "MONGO_DB_URI", getattr(config, "DB_URI", None))
     if not db_uri: return None
     if _MONGO_CLIENT is None: _MONGO_CLIENT = AsyncIOMotorClient(db_uri)
     db = _MONGO_CLIENT[MEDIA_DB_NAME]
@@ -489,6 +489,12 @@ class YouTubeAPI:
 
     async def fast_search(self, query: str, fetch_all: bool = False) -> Union[Dict[str, str], list, None]:
         if not query: return None
+        
+        # 🚀 CACHE CHECK: Avoid scraping if we already know this exact text search!
+        cached_data = await get_search_cache(query)
+        if cached_data and not fetch_all:
+            return cached_data
+            
         url = f"https://www.youtube.com/results?search_query={quote(str(query))}"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
@@ -500,9 +506,10 @@ class YouTubeAPI:
                 if r.status != 200: return None
                 html = await r.text()
             
-            clean_ids = []
+            results_list = []
             
-            # 🔥 SMART JSON PARSING (Extracts exact organic search results safely)
+            # 🔥 OPTION 1: SINGLE-REQUEST OPTIMIZATION 
+            # We now extract the Title, Duration, and Thumbnail directly from the scrape!
             match = re.search(r'(?:var ytInitialData|window\["ytInitialData"\])\s*=\s*(\{.*?\});', html)
             if match:
                 try:
@@ -512,30 +519,59 @@ class YouTubeAPI:
                         if "itemSectionRenderer" in section:
                             for item in section["itemSectionRenderer"].get("contents", []):
                                 if "videoRenderer" in item:
-                                    vid = item["videoRenderer"].get("videoId")
-                                    if vid and vid not in clean_ids:
-                                        clean_ids.append(vid)
+                                    vr = item["videoRenderer"]
+                                    vid = vr.get("videoId")
+                                    # Ensure unique videos only
+                                    if vid and not any(r["video_id"] == vid for r in results_list):
+                                        title = "Unknown Title"
+                                        if "title" in vr and "runs" in vr["title"]:
+                                            title = "".join([run["text"] for run in vr["title"]["runs"]])
+                                            
+                                        duration = "0:00"
+                                        if "lengthText" in vr and "simpleText" in vr["lengthText"]:
+                                            duration = vr["lengthText"]["simpleText"]
+                                            
+                                        thumb = f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+                                        if "thumbnail" in vr and "thumbnails" in vr["thumbnail"]:
+                                            thumbs = vr["thumbnail"]["thumbnails"]
+                                            if thumbs: thumb = thumbs[-1]["url"].split("?")[0]
+                                            
+                                        results_list.append({
+                                            "video_id": vid,
+                                            "title": title,
+                                            "duration": duration,
+                                            "thumbnail": thumb,
+                                            "url": f"https://www.youtube.com/watch?v={vid}"
+                                        })
                 except Exception as e:
                     LOGGER.error(f"JSON Parsing failed: {e}")
 
             # FALLBACK REGEX 
-            if not clean_ids:
+            if not results_list:
                 video_ids = re.findall(r'"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"', html)
                 seen = set()
                 for vid in video_ids:
                     if vid not in seen:
                         seen.add(vid)
-                        clean_ids.append(vid)
+                        results_list.append({
+                            "video_id": vid,
+                            "title": "Unknown Title",
+                            "duration": "0:00",
+                            "thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                            "url": f"https://www.youtube.com/watch?v={vid}"
+                        })
 
-            if not clean_ids: return None
-            if fetch_all: return clean_ids
+            if not results_list: return None
+            
+            if fetch_all: 
+                return results_list # Returns the whole list of dictionaries for sliders
 
-            video_id = clean_ids[0]
-            return {
-                "video_id": video_id,
-                "url": f"https://www.youtube.com/watch?v={video_id}",
-                "thumbnail": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
-            }
+            best_result = results_list[0]
+            
+            # Save the successful scrape to our memory cache
+            await set_search_cache(query, best_result)
+            return best_result
+            
         except Exception as e:
             LOGGER.error(f"Fast Search Failed: {e}")
             return None
@@ -579,34 +615,64 @@ class YouTubeAPI:
             _inc("search_failed")
             raise Exception("❌ Blocked by Security Check.")
             
+        # 🚀 MEMORY CACHE
+        cached = await get_search_cache(link)
+        if cached:
+            duration_sec = 0 if str(cached["duration"]) == "None" else int(time_to_seconds(cached["duration"]))
+            _inc("search_success")
+            return cached["title"], cached["duration"], duration_sec, cached["thumbnail"], cached["video_id"]
+            
         vid = extract_video_id(link)
         last_error = None
         
-        # 🔥 4x RETRY LOOP FOR DETAILS
         for attempt in range(SEARCH_RETRIES):
             try:
                 if vid:
                     exact_url = f"https://www.youtube.com/watch?v={vid}"
+                    results = VideosSearch(exact_url, limit=1)
+                    res = await results.next()
+                    if not res or not res.get("result"): raise Exception("❌ PySearch returned no data.")
+                    result = res["result"][0]
+                    yturl = result.get("link") or f"https://www.youtube.com/watch?v={result.get('id', '')}"
+                    title = result.get("title", "Unknown Title")
+                    duration_min = result.get("duration", "0:00")
+                    vidid = result.get("id", "")
+                    thumbs = result.get("thumbnails", [])
+                    thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
                 else:
+                    # 🚀 SINGLE-REQUEST OPTIMIZATION 
                     scrape_res = await self.fast_search(link)
-                    exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
+                    if not scrape_res: raise Exception("Scraper failed")
                     
-                results = VideosSearch(exact_url, limit=1)
-                res = await results.next()
-                if not res or not res.get("result"): raise Exception("❌ PySearch returned no data.")
-                    
-                result = res["result"][0]
-                yturl = result.get("link") or f"https://www.youtube.com/watch?v={result.get('id', '')}"
+                    if scrape_res.get("title") and scrape_res["title"] != "Unknown Title":
+                        title = scrape_res["title"]
+                        duration_min = scrape_res["duration"]
+                        vidid = scrape_res["video_id"]
+                        yturl = scrape_res["url"]
+                        thumbnail = scrape_res["thumbnail"]
+                    else:
+                        exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}"
+                        results = VideosSearch(exact_url, limit=1)
+                        res = await results.next()
+                        if not res or not res.get("result"): raise Exception("❌ PySearch returned no data.")
+                        result = res["result"][0]
+                        yturl = result.get("link") or f"https://www.youtube.com/watch?v={result.get('id', '')}"
+                        title = result.get("title", "Unknown Title")
+                        duration_min = result.get("duration", "0:00")
+                        vidid = result.get("id", "")
+                        thumbs = result.get("thumbnails", [])
+                        thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
+
                 if not is_safe_url(yturl): raise Exception("❌ Unsafe URL Returned.")
                 
-                title = result.get("title", "Unknown Title")
-                duration_min = result.get("duration", "0:00")
-                vidid = result.get("id", "")
-                
-                thumbs = result.get("thumbnails", [])
-                thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
-                
                 duration_sec = 0 if str(duration_min) == "None" else int(time_to_seconds(duration_min))
+                
+                # Save to cache!
+                await set_search_cache(link, {
+                    "title": title, "duration": duration_min, "video_id": vidid, 
+                    "thumbnail": thumbnail, "url": yturl
+                })
+                
                 _inc("search_success")
                 return title, duration_min, duration_sec, thumbnail, vidid
                 
@@ -625,24 +691,23 @@ class YouTubeAPI:
         if videoid: link = self.base + link
         if not is_safe_url(link): return "Unknown Title"
         
-        vid = extract_video_id(link)
+        cached = await get_search_cache(link)
+        if cached: return cached["title"]
         
+        vid = extract_video_id(link)
         for attempt in range(SEARCH_RETRIES):
             try:
                 if vid:
                     exact_url = f"https://www.youtube.com/watch?v={vid}"
+                    results = VideosSearch(exact_url, limit=1)
+                    res = await results.next()
+                    if res and res.get("result"): return res["result"][0].get("title", "Unknown Title")
                 else:
                     scrape_res = await self.fast_search(link)
-                    exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
-                    
-                results = VideosSearch(exact_url, limit=1)
-                res = await results.next()
-                if res and res.get("result"):
-                    return res["result"][0].get("title", "Unknown Title")
+                    if scrape_res and scrape_res.get("title") != "Unknown Title": return scrape_res["title"]
                 raise Exception("No result")
             except Exception:
-                if attempt < SEARCH_RETRIES - 1:
-                    await asyncio.sleep(0.5)
+                if attempt < SEARCH_RETRIES - 1: await asyncio.sleep(0.5)
         return "Unknown Title"
 
     async def duration(self, link: str, videoid: Union[bool, str] = None) -> str:
@@ -651,24 +716,23 @@ class YouTubeAPI:
         if videoid: link = self.base + link
         if not is_safe_url(link): return "0:00"
         
-        vid = extract_video_id(link)
+        cached = await get_search_cache(link)
+        if cached: return cached["duration"]
         
+        vid = extract_video_id(link)
         for attempt in range(SEARCH_RETRIES):
             try:
                 if vid:
                     exact_url = f"https://www.youtube.com/watch?v={vid}"
+                    results = VideosSearch(exact_url, limit=1)
+                    res = await results.next()
+                    if res and res.get("result"): return res["result"][0].get("duration", "0:00")
                 else:
                     scrape_res = await self.fast_search(link)
-                    exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
-                    
-                results = VideosSearch(exact_url, limit=1)
-                res = await results.next()
-                if res and res.get("result"):
-                    return res["result"][0].get("duration", "0:00")
+                    if scrape_res and scrape_res.get("duration"): return scrape_res["duration"]
                 raise Exception("No result")
             except Exception:
-                if attempt < SEARCH_RETRIES - 1:
-                    await asyncio.sleep(0.5)
+                if attempt < SEARCH_RETRIES - 1: await asyncio.sleep(0.5)
         return "0:00"
 
     async def thumbnail(self, link: str, videoid: Union[bool, str] = None) -> str:
@@ -677,25 +741,25 @@ class YouTubeAPI:
         if videoid: link = self.base + link
         if not is_safe_url(link): return getattr(config, "YOUTUBE_IMG_URL", "")
         
-        vid = extract_video_id(link)
+        cached = await get_search_cache(link)
+        if cached: return cached["thumbnail"]
         
+        vid = extract_video_id(link)
         for attempt in range(SEARCH_RETRIES):
             try:
                 if vid:
                     exact_url = f"https://www.youtube.com/watch?v={vid}"
+                    results = VideosSearch(exact_url, limit=1)
+                    res = await results.next()
+                    if res and res.get("result"):
+                        thumbs = res["result"][0].get("thumbnails", [])
+                        return thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
                 else:
                     scrape_res = await self.fast_search(link)
-                    exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
-                    
-                results = VideosSearch(exact_url, limit=1)
-                res = await results.next()
-                if res and res.get("result"):
-                    thumbs = res["result"][0].get("thumbnails", [])
-                    return thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
+                    if scrape_res and scrape_res.get("thumbnail"): return scrape_res["thumbnail"]
                 raise Exception("No result")
             except Exception:
-                if attempt < SEARCH_RETRIES - 1:
-                    await asyncio.sleep(0.5)
+                if attempt < SEARCH_RETRIES - 1: await asyncio.sleep(0.5)
         return getattr(config, "YOUTUBE_IMG_URL", "")
 
     async def video(self, link: str, videoid: Union[bool, str] = None):
@@ -753,33 +817,64 @@ class YouTubeAPI:
             _inc("search_failed")
             raise Exception("❌ Blocked by Security Check.")
         
+        # 🚀 MEMORY CACHE
+        cached = await get_search_cache(link)
+        if cached:
+            _inc("search_success")
+            return {
+                "title": cached["title"], "link": cached["url"], 
+                "vidid": cached["video_id"], "duration_min": cached["duration"], "thumb": cached["thumbnail"]
+            }, cached["video_id"]
+
         vid = extract_video_id(link)
         last_error = None
         
-        # 🔥 4x RETRY LOOP FOR TRACK SEARCH
         for attempt in range(SEARCH_RETRIES):
             try:
                 if vid:
                     exact_url = f"https://www.youtube.com/watch?v={vid}"
+                    results = VideosSearch(exact_url, limit=1)
+                    res = await results.next()
+                    if not res or not res.get("result"): raise Exception("❌ Track not found or PySearch failed.")
+                        
+                    result = res["result"][0]
+                    yturl = result.get("link") or f"https://www.youtube.com/watch?v={result.get('id', '')}"
+                    title = result.get("title", "Unknown Title")
+                    duration_min = result.get("duration", "0:00")
+                    vidid = result.get("id", "")
+                    thumbs = result.get("thumbnails", [])
+                    thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
                 else:
+                    # 🚀 SINGLE-REQUEST OPTIMIZATION
                     scrape_res = await self.fast_search(link)
-                    exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}" if scrape_res else link
+                    if not scrape_res: raise Exception("Scraper failed")
                     
-                results = VideosSearch(exact_url, limit=1)
-                res = await results.next()
-                if not res or not res.get("result"): raise Exception("❌ Track not found or PySearch failed.")
-                    
-                result = res["result"][0]
-                yturl = result.get("link") or f"https://www.youtube.com/watch?v={result.get('id', '')}"
+                    if scrape_res.get("title") and scrape_res["title"] != "Unknown Title":
+                        title = scrape_res["title"]
+                        duration_min = scrape_res["duration"]
+                        vidid = scrape_res["video_id"]
+                        yturl = scrape_res["url"]
+                        thumbnail = scrape_res["thumbnail"]
+                    else:
+                        exact_url = f"https://www.youtube.com/watch?v={scrape_res['video_id']}"
+                        results = VideosSearch(exact_url, limit=1)
+                        res = await results.next()
+                        if not res or not res.get("result"): raise Exception("❌ Track not found.")
+                        result = res["result"][0]
+                        yturl = result.get("link") or f"https://www.youtube.com/watch?v={result.get('id', '')}"
+                        title = result.get("title", "Unknown Title")
+                        duration_min = result.get("duration", "0:00")
+                        vidid = result.get("id", "")
+                        thumbs = result.get("thumbnails", [])
+                        thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
                 
                 if not is_safe_url(yturl): raise Exception("❌ Unsafe URL Returned from YouTube.")
                 
-                title = result.get("title", "Unknown Title")
-                duration_min = result.get("duration", "0:00")
-                vidid = result.get("id", "")
-                
-                thumbs = result.get("thumbnails", [])
-                thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
+                # Save to Cache
+                await set_search_cache(link, {
+                    "title": title, "duration": duration_min, "video_id": vidid, 
+                    "thumbnail": thumbnail, "url": yturl
+                })
                 
                 track_details = {"title": title, "link": yturl, "vidid": vidid, "duration_min": duration_min, "thumb": thumbnail}
                 _inc("search_success")
@@ -788,7 +883,7 @@ class YouTubeAPI:
             except Exception as e:
                 last_error = e
                 if attempt < SEARCH_RETRIES - 1:
-                    await asyncio.sleep(0.5) # Quick pause to let network/rate limits clear
+                    await asyncio.sleep(0.5) 
                     
         LOGGER.error(f"Track extraction failed for {link} after {SEARCH_RETRIES} attempts: {last_error}")
         _inc("search_failed")
@@ -836,23 +931,28 @@ class YouTubeAPI:
         vid = extract_video_id(link)
         last_error = None
         
-        # 🔥 4x RETRY LOOP FOR SLIDER
         for attempt in range(SEARCH_RETRIES):
             try:
                 if not vid:
-                    scraped_ids = await self.fast_search(link, fetch_all=True)
-                    if scraped_ids and len(scraped_ids) > query_type:
-                        target_id = scraped_ids[query_type]
-                        exact_url = f"https://www.youtube.com/watch?v={target_id}"
+                    scraped_data = await self.fast_search(link, fetch_all=True)
+                    if scraped_data and isinstance(scraped_data, list) and len(scraped_data) > query_type:
+                        target = scraped_data[query_type]
+                        
+                        # Use data directly if available from Single-Request
+                        if target.get("title") and target["title"] != "Unknown Title":
+                            _inc("search_success")
+                            return target["title"], target["duration"], target["thumbnail"], target["video_id"]
+                            
+                        exact_url = f"https://www.youtube.com/watch?v={target['video_id']}"
                         results = VideosSearch(exact_url, limit=1)
                         res = await results.next()
                         if res and res.get("result"):
                             result = res["result"][0]
                             title = result.get("title", "Unknown")
                             duration_min = result.get("duration", "0:00")
-                            vidid = result.get("id", target_id)
+                            vidid = result.get("id", target["video_id"])
                             thumbs = result.get("thumbnails", [])
-                            thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else ""
+                            thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
                             _inc("search_success")
                             return title, duration_min, thumbnail, vidid
 
@@ -866,7 +966,7 @@ class YouTubeAPI:
                 duration_min = result[query_type].get("duration", "0:00")
                 vidid = result[query_type].get("id", "")
                 thumbs = result[query_type].get("thumbnails", [])
-                thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else ""
+                thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
                 
                 _inc("search_success")
                 return title, duration_min, thumbnail, vidid
