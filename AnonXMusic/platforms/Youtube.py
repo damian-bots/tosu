@@ -1,5 +1,5 @@
 # AnonXMusic/utils/Youtube.py
-# Updated: Smart JSON Extraction + In-Memory Caching (Option 1 & 2)
+# Updated: Smart JSON Extraction + In-Memory Caching + Strict 100s Global Timeouts
 
 import time
 import asyncio
@@ -27,7 +27,7 @@ from AnonXMusic.utils.formatters import time_to_seconds
 
 import config
 from AnonXMusic import app as TG_APP
-
+from AnonXMusic import LOGGER as LOG
 # ============================
 # DB NAME & COLLECTION
 # ============================
@@ -35,11 +35,9 @@ MEDIA_DB_NAME = "arcapi"
 MEDIA_COLLECTION_NAME = "medias"
 
 DOWNLOAD_DIR = "downloads"
-LOGGER = logging.getLogger(__name__)
+LOGGER =
 
-# ============================
-# TUNING CONSTANTS
-# ============================
+
 CHUNK_SIZE = 1024 * 1024
 V2_HTTP_RETRIES = 5
 V2_DOWNLOAD_CYCLES = 5
@@ -51,7 +49,9 @@ JOB_POLL_BACKOFF = 1.2
 NO_CANDIDATE_WAIT = 4
 CDN_RETRIES = 5
 CDN_RETRY_DELAY = 2
-HARD_TIMEOUT = 80
+
+HARD_TIMEOUT = 100
+PROCESS_TIMEOUT = 100 
 
 TG_FLOOD_COOLDOWN = 0.0
 
@@ -231,12 +231,19 @@ async def check_file_size(link):
     if not link or not is_safe_url(str(link)): return None
     async def get_format_info(url):
         proc = await asyncio.create_subprocess_exec("yt-dlp", "-J", url, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        stdout, stderr = await proc.communicate()
+        try:
+            # 30s timeout for size checking specifically
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return None
         if proc.returncode != 0: return None
         return json.loads(stdout.decode())
+        
     def parse_size(formats):
         total_size = sum([f['filesize'] for f in formats if 'filesize' in f])
         return total_size
+        
     info = await get_format_info(str(link))
     if info is None: return None
     formats = info.get('formats', [])
@@ -490,7 +497,7 @@ class YouTubeAPI:
     async def fast_search(self, query: str, fetch_all: bool = False) -> Union[Dict[str, str], list, None]:
         if not query: return None
         
-        # 🚀 CACHE CHECK: Avoid scraping if we already know this exact text search!
+        # 🚀 CACHE CHECK
         cached_data = await get_search_cache(query)
         if cached_data and not fetch_all:
             return cached_data
@@ -508,8 +515,7 @@ class YouTubeAPI:
             
             results_list = []
             
-            # 🔥 OPTION 1: SINGLE-REQUEST OPTIMIZATION 
-            # We now extract the Title, Duration, and Thumbnail directly from the scrape!
+            # 🔥 SMART JSON PARSING
             match = re.search(r'(?:var ytInitialData|window\["ytInitialData"\])\s*=\s*(\{.*?\});', html)
             if match:
                 try:
@@ -521,7 +527,6 @@ class YouTubeAPI:
                                 if "videoRenderer" in item:
                                     vr = item["videoRenderer"]
                                     vid = vr.get("videoId")
-                                    # Ensure unique videos only
                                     if vid and not any(r["video_id"] == vid for r in results_list):
                                         title = "Unknown Title"
                                         if "title" in vr and "runs" in vr["title"]:
@@ -564,11 +569,9 @@ class YouTubeAPI:
             if not results_list: return None
             
             if fetch_all: 
-                return results_list # Returns the whole list of dictionaries for sliders
+                return results_list 
 
             best_result = results_list[0]
-            
-            # Save the successful scrape to our memory cache
             await set_search_cache(query, best_result)
             return best_result
             
@@ -615,7 +618,6 @@ class YouTubeAPI:
             _inc("search_failed")
             raise Exception("❌ Blocked by Security Check.")
             
-        # 🚀 MEMORY CACHE
         cached = await get_search_cache(link)
         if cached:
             duration_sec = 0 if str(cached["duration"]) == "None" else int(time_to_seconds(cached["duration"]))
@@ -640,7 +642,6 @@ class YouTubeAPI:
                     thumbs = result.get("thumbnails", [])
                     thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
                 else:
-                    # 🚀 SINGLE-REQUEST OPTIMIZATION 
                     scrape_res = await self.fast_search(link)
                     if not scrape_res: raise Exception("Scraper failed")
                     
@@ -667,7 +668,6 @@ class YouTubeAPI:
                 
                 duration_sec = 0 if str(duration_min) == "None" else int(time_to_seconds(duration_min))
                 
-                # Save to cache!
                 await set_search_cache(link, {
                     "title": title, "duration": duration_min, "video_id": vidid, 
                     "thumbnail": thumbnail, "url": yturl
@@ -773,7 +773,12 @@ class YouTubeAPI:
             "yt-dlp", "--cookies", cookie_txt_file(), "-g", "-f", "best[height<=?720][width<=?1280]", link,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=PROCESS_TIMEOUT)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return 0, "Timeout Exception: Video Extraction Took Too Long"
+            
         if stdout: return 1, stdout.decode().split("\n")[0]
         else: return 0, stderr.decode()
 
@@ -792,8 +797,12 @@ class YouTubeAPI:
             stdout=asyncio.subprocess.PIPE, 
             stderr=asyncio.subprocess.PIPE
         )
-        stdout, stderr = await proc.communicate()
-        
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=PROCESS_TIMEOUT)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return []
+            
         try:
             out = stdout.decode("utf-8") if stdout else ""
             result = out.split("\n")
@@ -817,7 +826,6 @@ class YouTubeAPI:
             _inc("search_failed")
             raise Exception("❌ Blocked by Security Check.")
         
-        # 🚀 MEMORY CACHE
         cached = await get_search_cache(link)
         if cached:
             _inc("search_success")
@@ -845,7 +853,6 @@ class YouTubeAPI:
                     thumbs = result.get("thumbnails", [])
                     thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
                 else:
-                    # 🚀 SINGLE-REQUEST OPTIMIZATION
                     scrape_res = await self.fast_search(link)
                     if not scrape_res: raise Exception("Scraper failed")
                     
@@ -870,7 +877,6 @@ class YouTubeAPI:
                 
                 if not is_safe_url(yturl): raise Exception("❌ Unsafe URL Returned from YouTube.")
                 
-                # Save to Cache
                 await set_search_cache(link, {
                     "title": title, "duration": duration_min, "video_id": vidid, 
                     "thumbnail": thumbnail, "url": yturl
@@ -938,7 +944,6 @@ class YouTubeAPI:
                     if scraped_data and isinstance(scraped_data, list) and len(scraped_data) > query_type:
                         target = scraped_data[query_type]
                         
-                        # Use data directly if available from Single-Request
                         if target.get("title") and target["title"] != "Unknown Title":
                             _inc("search_success")
                             return target["title"], target["duration"], target["thumbnail"], target["video_id"]
@@ -1022,11 +1027,13 @@ class YouTubeAPI:
         # 1. OPTIMIZED DOWNLOAD (API & DB CACHE)
         # ============================================
         try:
-            optimized_path = await optimized_download(link, is_video)
+            optimized_path = await asyncio.wait_for(optimized_download(link, is_video), timeout=PROCESS_TIMEOUT)
             if optimized_path and os.path.exists(optimized_path):
                 if songvideo or songaudio:
                     return optimized_path
                 return optimized_path, True
+        except asyncio.TimeoutError:
+            LOGGER.error(f"Optimized Download Timed Out (100s limit): {link}")
         except Exception as e:
             LOGGER.error(f"Optimized Download Failed: {e}")
 
@@ -1085,25 +1092,30 @@ class YouTubeAPI:
         
         try:
             if songvideo:
-                await loop.run_in_executor(None, song_video_dl)
+                await asyncio.wait_for(loop.run_in_executor(None, song_video_dl), timeout=PROCESS_TIMEOUT)
                 _inc("success"); _inc("success_video")
                 return f"downloads/{title_str}.mp4"
             
             if songaudio:
-                await loop.run_in_executor(None, song_audio_dl)
+                await asyncio.wait_for(loop.run_in_executor(None, song_audio_dl), timeout=PROCESS_TIMEOUT)
                 _inc("success"); _inc("success_audio")
                 return f"downloads/{title_str}.mp3"
                 
             if video:
                 if await is_on_off(1):
                     direct = True
-                    downloaded_file = await loop.run_in_executor(None, video_dl)
+                    downloaded_file = await asyncio.wait_for(loop.run_in_executor(None, video_dl), timeout=PROCESS_TIMEOUT)
                 else:
                     proc = await asyncio.create_subprocess_exec(
                         "yt-dlp", "--cookies", cookie_txt_file(), "-g", "-f", "best[height<=?720][width<=?1280]", link,
                         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                     )
-                    stdout, stderr = await proc.communicate()
+                    try:
+                        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=PROCESS_TIMEOUT)
+                    except asyncio.TimeoutError:
+                        proc.kill()
+                        raise Exception("YT-DLP Subprocess Timed Out")
+                        
                     if stdout:
                         downloaded_file = stdout.decode().split("\n")[0]
                         direct = False
@@ -1118,21 +1130,28 @@ class YouTubeAPI:
                             _inc("failed"); _inc("failed_video")
                             return None, False
                         direct = True
-                        downloaded_file = await loop.run_in_executor(None, video_dl)
+                        downloaded_file = await asyncio.wait_for(loop.run_in_executor(None, video_dl), timeout=PROCESS_TIMEOUT)
                         
                 _inc("success"); _inc("success_video")
             else:
                 direct = True
-                downloaded_file = await loop.run_in_executor(None, audio_dl)
+                downloaded_file = await asyncio.wait_for(loop.run_in_executor(None, audio_dl), timeout=PROCESS_TIMEOUT)
                 _inc("success"); _inc("success_audio")
             
             return downloaded_file, direct
+            
+        except asyncio.TimeoutError:
+            LOGGER.error(f"YT-DLP Download Timed Out (100s limit): {link}")
+            _inc("failed")
+            if is_video: _inc("failed_video")
+            else: _inc("failed_audio")
+            if songvideo or songaudio: return None
+            return None, False
             
         except Exception as e:
             LOGGER.error(f"YT-DLP fallback also failed: {e}")
             _inc("failed")
             if is_video: _inc("failed_video")
             else: _inc("failed_audio")
-            
             if songvideo or songaudio: return None
             return None, False
