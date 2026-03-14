@@ -35,7 +35,7 @@ MEDIA_DB_NAME = "arcapi"
 MEDIA_COLLECTION_NAME = "medias"
 
 DOWNLOAD_DIR = "downloads"
-LOGGER = LOG(
+LOGGER = LOG(__name__)
 
 
 CHUNK_SIZE = 1024 * 1024
