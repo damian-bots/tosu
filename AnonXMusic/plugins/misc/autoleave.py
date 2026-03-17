@@ -20,7 +20,7 @@ EXCLUDED_CHATS = {
 }
 
 # Explicitly named to reflect the maximum limit per individual assistant
-MAX_LEAVE_PER_ASSISTANT = 100
+MAX_LEAVE_PER_ASSISTANT = 80
 
 
 def get_next_run_time() -> datetime:
