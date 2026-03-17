@@ -442,14 +442,14 @@ async def auto_resume_check():
             ]])
             
             if SUDOERS:
-                owner_id = list(SUDOERS)[0]
+                owner_id = config.OWNER_ID
                 await app.send_message(owner_id, text, reply_markup=buttons)
             else:
                 LOG.warning("Unfinished broadcast found, but no SUDOERS available to notify.")
         except Exception as e: 
             LOG.error(f"Failed to send auto-resume prompt: {e}")
 
-@app.on_callback_query(filters.regex(r"^(resume_broadcast|cancel_broadcast)$") & SUDOERS)
+@app.on_callback_query(filters.regex(r"^(resume_broadcast|cancel_broadcast)$") & filters.user(config.OWNER_ID))
 async def broadcast_callback(client, query: CallbackQuery):
     global CANCEL_BROADCAST
     if query.data == "cancel_broadcast":
