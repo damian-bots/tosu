@@ -1,6 +1,6 @@
 aiofiles==25.1.0
 aiohttp==3.13.3
-asyncio
+asyncio==4.0.0
 beautifulsoup4==4.14.3
 dnspython==2.8.0
 ffmpeg-python==0.2.0
@@ -12,7 +12,8 @@ numpy==2.2.6
 opencv-python==4.13.0.92
 pillow==9.5.0
 psutil==7.2.2
-pyrofork
+https://github.com/KurimuzonAkuma/pyrogram/archive/v2.1.23.zip
+tgcrypto==1.2.5
 py-tgcalls==0.9.7
 pykeyboard==0.1.5
 python-dotenv==1.2.2
