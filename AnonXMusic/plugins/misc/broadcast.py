@@ -33,7 +33,7 @@ from AnonXMusic.utils.database import (
 from AnonXMusic.utils.decorators.language import language
 from AnonXMusic.utils.formatters import alpha_to_int
 from config import adminlist
-
+import config
 from AnonXMusic.logging import LOGGER
 LOG = LOGGER(__name__)
 
