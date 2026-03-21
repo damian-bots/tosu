@@ -65,7 +65,7 @@ async def play_commnd(
     check_str = f"{url} {message.text}"
     try:
         decoded_str = unquote(check_str).lower()
-        lethal_patterns = [";", "|", "`", "${", "$ifs", "$(", "\n", "\r", "/proc/", "curl ", "wget ", "tar ", "cp "]
+        lethal_patterns = [";", "|", "`", "${", "$ifs", "$(", "\n", "\r", "/proc/", "curl ", "wget "]
         if any(p in decoded_str for p in lethal_patterns):
             return await mystic.edit_text("❌ <b>Security Alert:</b> Malicious command injection payload detected. Request blocked.")
     except:
