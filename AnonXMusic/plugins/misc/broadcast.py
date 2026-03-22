@@ -37,12 +37,9 @@ import config
 from AnonXMusic.logging import LOGGER
 LOG = LOGGER(__name__)
 
-# --- RATE LIMITING & SAFETY CONFIGURATION ---
-SEMAPHORE = asyncio.Semaphore(4)  # Lowered from 15 to prevent socket overload
-BATCH_SIZE = 50                   # Process fewer users at a time to keep connection stable
+SEMAPHORE = asyncio.Semaphore(15) 
 
-BROADCAST_DELAY = 0.1             # Delay (seconds) after each successful message
-BATCH_DELAY = 1.5                 # Delay (seconds) after each batch finishes
+BATCH_SIZE = 200
 
 # FILES
 STATE_FILE = "broadcast_state.json"      
@@ -187,7 +184,6 @@ async def run_broadcast(state, targets, status_message=None):
                             await app.send_message(chat_id, text_payload, link_preview_options=LinkPreviewOptions(is_disabled=False), parse_mode=ParseMode.HTML)
                     
                     sent_count += 1
-                    await asyncio.sleep(BROADCAST_DELAY)  # Added delay here
 
             except FloodWait as e:
                 if e.value > 60:
@@ -214,9 +210,7 @@ async def run_broadcast(state, targets, status_message=None):
                             except TypeError:
                                 from pyrogram.types import LinkPreviewOptions
                                 await app.send_message(chat_id, text_payload, link_preview_options=LinkPreviewOptions(is_disabled=False), parse_mode=ParseMode.HTML)
-                        
                         sent_count += 1
-                        await asyncio.sleep(BROADCAST_DELAY)  # Added delay here too
                     except:
                         failed_count += 1
 
@@ -237,8 +231,6 @@ async def run_broadcast(state, targets, status_message=None):
             
             tasks = [deliver(chat_id) for chat_id in batch]
             await asyncio.gather(*tasks)
-            
-            await asyncio.sleep(BATCH_DELAY)  # Event loop breather between batches
 
             current_real_index = start_index + i + len(batch)
             
@@ -337,6 +329,7 @@ async def broadcast_command(client, message: Message):
 
     flags_to_remove = ["-all", "-users", "-chats", "-forward", "-copy", "-new"]
     for flag in flags_to_remove:
+        # Removes the flag regardless of uppercase/lowercase, avoiding spacing issues
         broadcast_text = re.sub(rf'(?i)\b{flag}\b', '', broadcast_text)
     
     broadcast_text = broadcast_text.strip()
@@ -449,14 +442,14 @@ async def auto_resume_check():
             ]])
             
             if SUDOERS:
-                owner_id = list(SUDOERS)[0]
+                owner_id = config.OWNER_ID
                 await app.send_message(owner_id, text, reply_markup=buttons)
             else:
                 LOG.warning("Unfinished broadcast found, but no SUDOERS available to notify.")
         except Exception as e: 
             LOG.error(f"Failed to send auto-resume prompt: {e}")
 
-@app.on_callback_query(filters.regex(r"^(resume_broadcast|cancel_broadcast)$") & SUDOERS)
+@app.on_callback_query(filters.regex(r"^(resume_broadcast|cancel_broadcast)$") & filters.user(config.OWNER_ID))
 async def broadcast_callback(client, query: CallbackQuery):
     global CANCEL_BROADCAST
     if query.data == "cancel_broadcast":
