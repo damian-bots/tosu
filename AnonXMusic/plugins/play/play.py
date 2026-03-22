@@ -58,20 +58,6 @@ async def play_commnd(
         _["play_2"].format(channel) if channel else _["play_1"]
     )
     
-    # ==========================================
-    # 🛡 GLOBAL SECURITY FIREWALL 🛡
-    # Blocks Command Injection before any processing
-    # ==========================================
-    check_str = f"{url} {message.text}"
-    try:
-        decoded_str = unquote(check_str).lower()
-        lethal_patterns = [";", "|", "`", "${", "$ifs", "$(", "\n", "\r", "/proc/", "curl ", "wget "]
-        if any(p in decoded_str for p in lethal_patterns):
-            return await mystic.edit_text("❌ <b>Security Alert:</b> Malicious command injection payload detected. Request blocked.")
-    except:
-        pass
-    # ==========================================
-
     plist_id = None
     slider = None
     plist_type = None
