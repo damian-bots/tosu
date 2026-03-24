@@ -1,3 +1,6 @@
+# AnonXMusic/utils/Youtube.py
+# Updated: Smart JSON Extraction + In-Memory Caching + Strict 100s Global Timeouts
+
 import time
 import asyncio
 import os
