@@ -1,6 +1,3 @@
-# AnonXMusic/utils/Youtube.py
-# Updated: yt-dlp Toggle + Race Condition Fix for NoAudioSourceFound
-
 import time
 import asyncio
 import os
@@ -33,7 +30,7 @@ from AnonXMusic import LOGGER as LOG
 # TOGGLE SETTINGS
 # ============================
 # Set to False to completely disable yt-dlp. The bot will ONLY use API/DB cache.
-YTDLP_ENABLED = True  
+YTDLP_ENABLED = False  
 
 # ============================
 # DB NAME & COLLECTION
