@@ -1,5 +1,5 @@
 # AnonXMusic/utils/Youtube.py
-# Updated: Smart JSON Extraction + In-Memory Caching + Strict 100s Global Timeouts
+# Updated: Smart JSON Extraction + In-Memory Caching + Strict 100s Global Timeouts + YTDLP Toggle + Anti-Ghost Media
 
 import time
 import asyncio
@@ -28,6 +28,7 @@ from AnonXMusic.utils.formatters import time_to_seconds
 import config
 from AnonXMusic import app as TG_APP
 from AnonXMusic import LOGGER as LOG
+
 # ============================
 # DB NAME & COLLECTION
 # ============================
@@ -202,7 +203,7 @@ def is_safe_url(text: str) -> bool:
         LOGGER.error(f"URL Validation Error: {e}")
         return False
 
-# Strict Anony Regex - Trims tracking params automatically (e.g. ?si=...)
+# Strict Anony Regex - Trims tracking params automatically
 YOUTUBE_REGEX = re.compile(
     r"(?:https?://)?(?:www\.|m\.|music\.)?"
     r"(?:youtube\.com/(?:watch\?v=|shorts/|playlist\?list=)|youtu\.be/)"
@@ -232,7 +233,6 @@ async def check_file_size(link):
     async def get_format_info(url):
         proc = await asyncio.create_subprocess_exec("yt-dlp", "-J", url, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         try:
-            # 30s timeout for size checking specifically
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
         except asyncio.TimeoutError:
             proc.kill()
@@ -265,18 +265,34 @@ async def _download_from_cdn(cdn_url: str, out_path: str) -> Optional[str]:
                         await asyncio.sleep(CDN_RETRY_DELAY)
                         continue
                     return None
+                    
+                # STRICT FIX: Block HTML error pages masquerading as media 
+                content_type = resp.headers.get("Content-Type", "").lower()
+                if "text/html" in content_type or "application/json" in content_type:
+                    LOGGER.error(f"❌ CDN returned invalid content-type: {content_type} (Likely an API limit error page)")
+                    return None
+
                 _ensure_dir(str(Path(out_path).parent))
                 async with aiofiles.open(out_path, "wb") as f:
                     async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
                         if not chunk: break
                         await f.write(chunk)
-            if os.path.exists(out_path): return out_path
+            
+            # STRICT FIX: Ensure the file is at least 50KB. Empty/ghost files trigger "NoAudioSource Found".
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 50000:
+                return out_path
+            
+            # If the file is broken/tiny, delete it to prevent NoAudioSource Found
+            try:
+                if os.path.exists(out_path): os.remove(out_path)
+            except: pass
             return None
+
         except asyncio.TimeoutError:
             _inc("timeout_fail")
             if attempt < CDN_RETRIES: await asyncio.sleep(CDN_RETRY_DELAY); continue
             return None
-        except Exception:
+        except Exception as e:
             _inc("network_fail")
             if attempt < CDN_RETRIES: await asyncio.sleep(CDN_RETRY_DELAY); continue
             return None
@@ -314,7 +330,10 @@ async def _download_from_media_db(track_id: str, is_video: bool) -> Optional[str
     _ensure_dir(DOWNLOAD_DIR)
     final_path = os.path.join(DOWNLOAD_DIR, f"{track_id}.{ext}")
     tmp_path = final_path + ".temp"
-    if os.path.exists(final_path) and os.path.getsize(final_path) > 0: return final_path
+    
+    # STRICT FIX: Ensure cached file is robust
+    if os.path.exists(final_path) and os.path.getsize(final_path) > 50000: 
+        return final_path
     
     try:
         from pyrogram.errors import FloodWait
@@ -334,17 +353,24 @@ async def _download_from_media_db(track_id: str, is_video: bool) -> Optional[str
             TG_FLOOD_COOLDOWN = time.time() + e.value + 5
             _inc("tg_fail")
             return None
+            
         fixed = _resolve_if_dir(dl_res) if isinstance(dl_res, str) else None
-        if not fixed or not os.path.exists(fixed) or os.path.getsize(fixed) <= 0:
+        
+        # STRICT FIX: Media size > 50KB to prevent NoAudioSource 
+        if not fixed or not os.path.exists(fixed) or os.path.getsize(fixed) <= 50000:
             _inc("media_db_fail")
             try:
                 if tmp_path and os.path.exists(tmp_path): os.remove(tmp_path)
             except: pass
             return None
+            
         try:
             if fixed != final_path: os.replace(fixed, final_path)
         except Exception: final_path = fixed
-        if os.path.exists(final_path) and os.path.getsize(final_path) > 0: return final_path
+        
+        if os.path.exists(final_path) and os.path.getsize(final_path) > 50000: 
+            return final_path
+            
         _inc("media_db_fail")
         return None
     except Exception:
@@ -454,7 +480,11 @@ async def v2_download(link: str, media_type: str) -> Optional[str]:
         ext = _guess_ext_from_url(normalized, is_video=is_video)
         base_name = vid if vid else "audio"
         out_path = os.path.join(DOWNLOAD_DIR, f"{base_name}.{ext}")
-        if os.path.exists(out_path): return out_path
+        
+        # Check if already present to avoid CDN spam
+        if os.path.exists(out_path) and os.path.getsize(out_path) > 50000: 
+            return out_path
+            
         path = await _download_from_cdn(normalized, out_path)
         if not path:
             _inc("cdn_fail")
@@ -467,7 +497,7 @@ async def optimized_download(link: str, is_video: bool) -> Optional[str]:
     vid = extract_video_id(str(link))
     if vid:
         db_path = await _download_from_media_db(vid, is_video=is_video)
-        if db_path and os.path.exists(db_path):
+        if db_path and os.path.exists(db_path) and os.path.getsize(db_path) > 50000:
             _inc("success")
             if is_video: _inc("success_video")
             else: _inc("success_audio")
@@ -477,7 +507,7 @@ async def optimized_download(link: str, is_video: bool) -> Optional[str]:
     api_key = getattr(config, "API_KEY", None)
     if api_url and api_key:
         v2_path = await v2_download(str(link), media_type=("video" if is_video else "audio"))
-        if v2_path and os.path.exists(v2_path):
+        if v2_path and os.path.exists(v2_path) and os.path.getsize(v2_path) > 50000:
             _inc("success")
             if is_video: _inc("success_video")
             else: _inc("success_audio")
@@ -497,7 +527,6 @@ class YouTubeAPI:
     async def fast_search(self, query: str, fetch_all: bool = False) -> Union[Dict[str, str], list, None]:
         if not query: return None
         
-        # 🚀 CACHE CHECK
         cached_data = await get_search_cache(query)
         if cached_data and not fetch_all:
             return cached_data
@@ -515,7 +544,6 @@ class YouTubeAPI:
             
             results_list = []
             
-            # 🔥 SMART JSON PARSING
             match = re.search(r'(?:var ytInitialData|window\["ytInitialData"\])\s*=\s*(\{.*?\});', html)
             if match:
                 try:
@@ -551,7 +579,6 @@ class YouTubeAPI:
                 except Exception as e:
                     LOGGER.error(f"JSON Parsing failed: {e}")
 
-            # FALLBACK REGEX 
             if not results_list:
                 video_ids = re.findall(r'"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"', html)
                 seen = set()
@@ -1028,7 +1055,8 @@ class YouTubeAPI:
         # ============================================
         try:
             optimized_path = await asyncio.wait_for(optimized_download(link, is_video), timeout=PROCESS_TIMEOUT)
-            if optimized_path and os.path.exists(optimized_path):
+            # Strict Anti-Ghost Size validation prevents NoAudioSource Found
+            if optimized_path and os.path.exists(optimized_path) and os.path.getsize(optimized_path) > 50000:
                 if songvideo or songaudio:
                     return optimized_path
                 return optimized_path, True
@@ -1038,8 +1066,17 @@ class YouTubeAPI:
             LOGGER.error(f"Optimized Download Failed: {e}")
 
         # ============================================
-        # 2. FALLBACK TO YT-DLP (ONLY FOR DOWNLOADING)
+        # 2. TOGGLED FALLBACK TO YT-DLP 
         # ============================================
+        ytdlp_enabled = getattr(config, "YTDLP_DOWNLOADING", False) # Toggle check
+        if not ytdlp_enabled:
+            LOGGER.info(f"⚠️ YT-DLP is disabled in config. API/DB failed. Aborting.")
+            _inc("failed")
+            if is_video: _inc("failed_video")
+            else: _inc("failed_audio")
+            if songvideo or songaudio: return None
+            return None, False
+
         LOGGER.info(f"⚠️ YT-DLP DL FALLBACK | {link}")
         
         def song_video_dl():
