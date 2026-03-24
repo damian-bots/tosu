@@ -1,5 +1,5 @@
 # AnonXMusic/utils/Youtube.py
-# Updated: Smart JSON Extraction + In-Memory Caching + Strict 100s Global Timeouts
+# Updated: yt-dlp Toggle + Race Condition Fix for NoAudioSourceFound
 
 import time
 import asyncio
@@ -28,6 +28,13 @@ from AnonXMusic.utils.formatters import time_to_seconds
 import config
 from AnonXMusic import app as TG_APP
 from AnonXMusic import LOGGER as LOG
+
+# ============================
+# TOGGLE SETTINGS
+# ============================
+# Set to False to completely disable yt-dlp. The bot will ONLY use API/DB cache.
+YTDLP_ENABLED = True  
+
 # ============================
 # DB NAME & COLLECTION
 # ============================
@@ -36,7 +43,6 @@ MEDIA_COLLECTION_NAME = "medias"
 
 DOWNLOAD_DIR = "downloads"
 LOGGER = LOG(__name__)
-
 
 CHUNK_SIZE = 1024 * 1024
 V2_HTTP_RETRIES = 5
@@ -202,7 +208,6 @@ def is_safe_url(text: str) -> bool:
         LOGGER.error(f"URL Validation Error: {e}")
         return False
 
-# Strict Anony Regex - Trims tracking params automatically (e.g. ?si=...)
 YOUTUBE_REGEX = re.compile(
     r"(?:https?://)?(?:www\.|m\.|music\.)?"
     r"(?:youtube\.com/(?:watch\?v=|shorts/|playlist\?list=)|youtu\.be/)"
@@ -232,7 +237,6 @@ async def check_file_size(link):
     async def get_format_info(url):
         proc = await asyncio.create_subprocess_exec("yt-dlp", "-J", url, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         try:
-            # 30s timeout for size checking specifically
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
         except asyncio.TimeoutError:
             proc.kill()
@@ -486,7 +490,7 @@ async def optimized_download(link: str, is_video: bool) -> Optional[str]:
     return None
 
 # ============================
-# YOUTUBE API CLASS (PURE SCRAPER -> EXACT URL PYSEARCH)
+# YOUTUBE API CLASS 
 # ============================
 class YouTubeAPI:
     def __init__(self):
@@ -497,7 +501,6 @@ class YouTubeAPI:
     async def fast_search(self, query: str, fetch_all: bool = False) -> Union[Dict[str, str], list, None]:
         if not query: return None
         
-        # 🚀 CACHE CHECK
         cached_data = await get_search_cache(query)
         if cached_data and not fetch_all:
             return cached_data
@@ -514,8 +517,6 @@ class YouTubeAPI:
                 html = await r.text()
             
             results_list = []
-            
-            # 🔥 SMART JSON PARSING
             match = re.search(r'(?:var ytInitialData|window\["ytInitialData"\])\s*=\s*(\{.*?\});', html)
             if match:
                 try:
@@ -551,7 +552,6 @@ class YouTubeAPI:
                 except Exception as e:
                     LOGGER.error(f"JSON Parsing failed: {e}")
 
-            # FALLBACK REGEX 
             if not results_list:
                 video_ids = re.findall(r'"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"', html)
                 seen = set()
@@ -567,9 +567,7 @@ class YouTubeAPI:
                         })
 
             if not results_list: return None
-            
-            if fetch_all: 
-                return results_list 
+            if fetch_all: return results_list 
 
             best_result = results_list[0]
             await set_search_cache(query, best_result)
@@ -1031,15 +1029,25 @@ class YouTubeAPI:
             if optimized_path and os.path.exists(optimized_path):
                 if songvideo or songaudio:
                     return optimized_path
-                return optimized_path, True
+                # FIX: Always returning False for direct so stream.py queues it safely as 'vid_id'
+                # This explicitly prevents 'NoAudioSourceFound' caused by autoclean deleting cached files!
+                return optimized_path, False 
         except asyncio.TimeoutError:
             LOGGER.error(f"Optimized Download Timed Out (100s limit): {link}")
         except Exception as e:
             LOGGER.error(f"Optimized Download Failed: {e}")
 
         # ============================================
-        # 2. FALLBACK TO YT-DLP (ONLY FOR DOWNLOADING)
+        # 2. FALLBACK TO YT-DLP (ONLY IF ENABLED)
         # ============================================
+        if not YTDLP_ENABLED:
+            LOGGER.warning(f"🚫 yt-dlp fallback is disabled by YTDLP_ENABLED toggle. Failing download for: {link}")
+            _inc("failed")
+            if is_video: _inc("failed_video")
+            else: _inc("failed_audio")
+            if songvideo or songaudio: return None
+            return None, False
+
         LOGGER.info(f"⚠️ YT-DLP DL FALLBACK | {link}")
         
         def song_video_dl():
@@ -1067,27 +1075,49 @@ class YouTubeAPI:
             
         def audio_dl():
             ydl_optssx = {
-                "format": "bestaudio/best", "outtmpl": "downloads/%(id)s.%(ext)s", "geo_bypass": True,
-                "nocheckcertificate": True, "quiet": True, "cookiefile": cookie_txt_file(), "no_warnings": True,
+                "format": "bestaudio/best", 
+                "outtmpl": "downloads/%(id)s.%(ext)s", 
+                "geo_bypass": True,
+                "nocheckcertificate": True, 
+                "quiet": True, 
+                "cookiefile": cookie_txt_file(), 
+                "no_warnings": True,
             }
             x = yt_dlp.YoutubeDL(ydl_optssx)
-            info = x.extract_info(link, False)
-            xyz = os.path.join("downloads", f"{info['id']}.{info.get('ext', 'm4a')}")
-            if os.path.exists(xyz): return xyz
-            x.download([link])
+            info = x.extract_info(link, download=True)
+            xyz = x.prepare_filename(info)
+            
+            # Fallback extension checker in case yt-dlp converted it
+            if not os.path.exists(xyz):
+                LOGGER.error(f"Expected audio file not found at {xyz}. Checking other extensions...")
+                base, _ = os.path.splitext(xyz)
+                for ext in ['.webm', '.m4a', '.mp3', '.ogg']:
+                    if os.path.exists(base + ext):
+                        return base + ext
             return xyz
 
         def video_dl():
             ydl_optssx = {
                 "format": "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])",
-                "outtmpl": "downloads/%(id)s.%(ext)s", "geo_bypass": True, "nocheckcertificate": True,
-                "quiet": True, "cookiefile": cookie_txt_file(), "no_warnings": True,
+                "outtmpl": "downloads/%(id)s.%(ext)s", 
+                "geo_bypass": True, 
+                "nocheckcertificate": True,
+                "quiet": True, 
+                "cookiefile": cookie_txt_file(), 
+                "no_warnings": True,
+                "merge_output_format": "mp4", # Force FFmpeg to output mp4
             }
             x = yt_dlp.YoutubeDL(ydl_optssx)
-            info = x.extract_info(link, False)
-            xyz = os.path.join("downloads", f"{info['id']}.{info.get('ext', 'mp4')}")
-            if os.path.exists(xyz): return xyz
-            x.download([link])
+            info = x.extract_info(link, download=True)
+            xyz = x.prepare_filename(info)
+            
+            # Fallback extension checker
+            if not os.path.exists(xyz):
+                LOGGER.error(f"Expected video file not found at {xyz}. Checking other extensions...")
+                base, _ = os.path.splitext(xyz)
+                for ext in ['.mp4', '.mkv', '.webm']:
+                    if os.path.exists(base + ext):
+                        return base + ext
             return xyz
         
         try:
@@ -1138,6 +1168,9 @@ class YouTubeAPI:
                 downloaded_file = await asyncio.wait_for(loop.run_in_executor(None, audio_dl), timeout=PROCESS_TIMEOUT)
                 _inc("success"); _inc("success_audio")
             
+            if direct and isinstance(downloaded_file, str) and not os.path.exists(downloaded_file):
+                LOGGER.error(f"CRITICAL: Final downloaded file missing before sending to PyTgCalls: {downloaded_file}")
+                
             return downloaded_file, direct
             
         except asyncio.TimeoutError:
