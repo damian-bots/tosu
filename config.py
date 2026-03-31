@@ -18,7 +18,7 @@ MONGO_DB_URI = getenv("MONGO_DB_URI")
 DB_URI = getenv("DB_URI")
 DB_NAME = getenv("DB_NAME")
 
-DURATION_LIMIT_MIN = int(getenv("DURATION_LIMIT", 800))
+DURATION_LIMIT_MIN = int(getenv("DURATION_LIMIT", 469))
 
 # Chat id of a group for logging bot's activities
 LOGGER_ID = int(getenv("LOGGER_ID"))
