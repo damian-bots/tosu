@@ -1,5 +1,5 @@
 # AnonXMusic/utils/Youtube.py
-# Updated: Smart JSON Extraction + In-Memory Caching + Strict 100s Global Timeouts
+# Updated: Smart JSON Extraction (Brace-Counting Fix) + In-Memory Caching + Strict 100s Global Timeouts
 
 import time
 import asyncio
@@ -50,8 +50,8 @@ NO_CANDIDATE_WAIT = 4
 CDN_RETRIES = 5
 CDN_RETRY_DELAY = 2
 
-HARD_TIMEOUT = 120
-PROCESS_TIMEOUT = 120 
+HARD_TIMEOUT = 80
+PROCESS_TIMEOUT = 80 
 
 TG_FLOOD_COOLDOWN = 0.0
 
@@ -516,10 +516,43 @@ class YouTubeAPI:
             results_list = []
             
             # 🔥 SMART JSON PARSING
-            match = re.search(r'(?:var ytInitialData|window\["ytInitialData"\])\s*=\s*(\{.*?\});', html)
-            if match:
-                try:
-                    data = json.loads(match.group(1))
+            try:
+                json_str = None
+                # 1. Find the start of the JSON object
+                match = re.search(r'(?:var ytInitialData|window\["ytInitialData"\])\s*=\s*(\{)', html)
+                if match:
+                    start_idx = match.start(1)
+                    brace_count = 0
+                    in_string = False
+                    escape_next = False
+                    
+                    # 2. Brace counting to reliably find the end of the JSON object
+                    for i in range(start_idx, len(html)):
+                        char = html[i]
+                        
+                        if escape_next:
+                            escape_next = False
+                            continue
+                        if char == '\\':
+                            escape_next = True
+                            continue
+                        if char == '"':
+                            in_string = not in_string
+                            continue
+                            
+                        if not in_string:
+                            if char == '{':
+                                brace_count += 1
+                            elif char == '}':
+                                brace_count -= 1
+                                
+                            if brace_count == 0:
+                                json_str = html[start_idx:i+1]
+                                break
+
+                # 3. Parse the safely extracted JSON
+                if json_str:
+                    data = json.loads(json_str)
                     contents = data.get("contents", {}).get("twoColumnSearchResultsRenderer", {}).get("primaryContents", {}).get("sectionListRenderer", {}).get("contents", [])
                     for section in contents:
                         if "itemSectionRenderer" in section:
@@ -548,8 +581,8 @@ class YouTubeAPI:
                                             "thumbnail": thumb,
                                             "url": f"https://www.youtube.com/watch?v={vid}"
                                         })
-                except Exception as e:
-                    LOGGER.error(f"JSON Parsing failed: {e}")
+            except Exception as e:
+                LOGGER.error(f"JSON Parsing failed: {e}")
 
             # FALLBACK REGEX 
             if not results_list:
