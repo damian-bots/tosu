@@ -29,7 +29,7 @@ API_URL = getenv("API_URL", "https://api.deadlinetech.site")
 API_KEY = getenv("API_KEY")
 
 # Get this value from @FallenxBot on Telegram by /id
-OWNER_ID = 89891145
+OWNER_ID = 603536072
 
 ## Fill these variables if you're deploying on heroku.
 # Your heroku app name
