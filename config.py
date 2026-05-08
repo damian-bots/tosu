@@ -25,7 +25,7 @@ LOGGER_ID = int(getenv("LOGGER_ID"))
 MEDIA_CHANNEL_ID = int(getenv("MEDIA_CHANNEL_ID"))
 
 #Get API_KEY from deadlinetech.site or @smaugxd
-API_URL = getenv("API_URL", "https://api.deadlinetech.site")
+API_URL = getenv("API_URL", "https://api.arcmusic.fun")
 API_KEY = getenv("API_KEY")
 
 # Get this value from @FallenxBot on Telegram by /id
