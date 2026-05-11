@@ -28,9 +28,7 @@ from AnonXMusic.utils.formatters import time_to_seconds
 import config
 from AnonXMusic import app as TG_APP
 from AnonXMusic import LOGGER as LOG
-# ============================
-# DB NAME & COLLECTION
-# ============================
+
 MEDIA_DB_NAME = "arcapi"
 MEDIA_COLLECTION_NAME = "medias"
 
@@ -55,9 +53,6 @@ PROCESS_TIMEOUT = 80
 
 TG_FLOOD_COOLDOWN = 0.0
 
-# ============================
-# DOWNLOAD & SEARCH STATISTICS
-# ============================
 DOWNLOAD_STATS: Dict[str, int] = {
     "total": 0, "success": 0, "failed": 0, 
     "success_audio": 0, "success_video": 0,
@@ -88,9 +83,6 @@ def reset_download_stats() -> None:
 def _inc(key: str, n: int = 1) -> None:
     DOWNLOAD_STATS[key] = DOWNLOAD_STATS.get(key, 0) + n
 
-# ============================
-# GLOBAL SESSION & CLIENTS
-# ============================
 _session: Optional[aiohttp.ClientSession] = None
 _session_lock = asyncio.Lock()
 _MONGO_CLIENT: Optional[AsyncIOMotorClient] = None
@@ -152,9 +144,7 @@ def _resolve_if_dir(download_result: str) -> Optional[str]:
         return str(newest)
     return download_result
 
-# ============================
-# 🛡 STRICT GLOBAL FIREWALL 🛡
-# ============================
+
 def is_safe_url(text: str) -> bool:
     DANGEROUS_CHARS = [
         ";", "|", "$", "`", "\n", "\r", "(", ")", 
@@ -202,7 +192,6 @@ def is_safe_url(text: str) -> bool:
         LOGGER.error(f"URL Validation Error: {e}")
         return False
 
-# Strict Anony Regex - Trims tracking params automatically (e.g. ?si=...)
 YOUTUBE_REGEX = re.compile(
     r"(?:https?://)?(?:www\.|m\.|music\.)?"
     r"(?:youtube\.com/(?:watch\?v=|shorts/|playlist\?list=)|youtu\.be/)"
@@ -251,9 +240,6 @@ async def check_file_size(link):
     return parse_size(formats)
 
 
-# ============================
-# DOWNLOAD HANDLERS (V2 & CDN)
-# ============================
 async def _download_from_cdn(cdn_url: str, out_path: str) -> Optional[str]:
     if not cdn_url: return None
     for attempt in range(1, CDN_RETRIES + 1):
@@ -485,9 +471,6 @@ async def optimized_download(link: str, is_video: bool) -> Optional[str]:
             return v2_path
     return None
 
-# ============================
-# YOUTUBE API CLASS (PURE SCRAPER -> EXACT URL PYSEARCH)
-# ============================
 class YouTubeAPI:
     def __init__(self):
         self.base = "https://www.youtube.com/watch?v="
@@ -497,7 +480,6 @@ class YouTubeAPI:
     async def fast_search(self, query: str, fetch_all: bool = False) -> Union[Dict[str, str], list, None]:
         if not query: return None
         
-        # 🚀 CACHE CHECK
         cached_data = await get_search_cache(query)
         if cached_data and not fetch_all:
             return cached_data
@@ -515,7 +497,6 @@ class YouTubeAPI:
             
             results_list = []
             
-            # 🔥 SMART JSON PARSING
             try:
                 json_str = None
                 # 1. Find the start of the JSON object
@@ -526,7 +507,6 @@ class YouTubeAPI:
                     in_string = False
                     escape_next = False
                     
-                    # 2. Brace counting to reliably find the end of the JSON object
                     for i in range(start_idx, len(html)):
                         char = html[i]
                         
@@ -550,7 +530,6 @@ class YouTubeAPI:
                                 json_str = html[start_idx:i+1]
                                 break
 
-                # 3. Parse the safely extracted JSON
                 if json_str:
                     data = json.loads(json_str)
                     contents = data.get("contents", {}).get("twoColumnSearchResultsRenderer", {}).get("primaryContents", {}).get("sectionListRenderer", {}).get("contents", [])
