@@ -1,8 +1,3 @@
-# ==========================================================
-# 🔒 All Rights Reserved © AnonXMusic
-# 📁 This file is part of the AnonXMusic Project.
-# ==========================================================
-
 import time
 import asyncio
 import json
@@ -37,11 +32,11 @@ import config
 from AnonXMusic.logging import LOGGER
 LOG = LOGGER(__name__)
 
-SEMAPHORE = asyncio.Semaphore(15) 
+# Stability Settings
+SEMAPHORE = asyncio.Semaphore(5) 
+BATCH_SIZE = 50
 
-BATCH_SIZE = 200
-
-# FILES
+# Save Files
 STATE_FILE = "broadcast_state.json"      
 TARGETS_FILE = "broadcast_targets.json"  
 FAILED_FILE = "broadcast_failed.json"   
@@ -49,25 +44,6 @@ FAILED_FILE = "broadcast_failed.json"
 BROADCAST_LOCK = asyncio.Lock()
 CANCEL_BROADCAST = False 
 FAILED_IDS = set()
-
-# Standard Emoji Configuration
-class EMOJI:
-    INFO = "ℹ️"
-    ERROR = "❌"
-    WARN = "⚠️"
-    STOP = "🛑"
-    CHECK = "✅"
-    BROADCAST = "📢"
-    ARROW = "➡️"
-    USER = "👤"
-    CHATS = "👥"
-    PACKAGE = "📦"
-    TIMER = "⏳"
-    NOTE = "📝"
-    SPEED = "🚀"
-    SKIP = "⏩"
-    RECYCLE = "♻️"
-    STATS = "📊"
 
 def get_readable_time(seconds: int) -> str:
     count = 0
@@ -86,7 +62,6 @@ def get_readable_time(seconds: int) -> str:
     return ":".join(time_list)
 
 async def write_json_async(filename, data):
-    """Runs file write in a separate thread to avoid blocking the bot."""
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, partial(json_dump_sync, filename, data))
 
@@ -121,7 +96,6 @@ async def run_broadcast(state, targets, status_message=None):
     async with BROADCAST_LOCK:
         CANCEL_BROADCAST = False
         
-        # Load details from state
         mode = state["mode"]
         is_reply = state.get("is_reply", True)
         content_chat_id = state.get("content_chat")
@@ -133,9 +107,12 @@ async def run_broadcast(state, targets, status_message=None):
         start_time = state.get("start_time", time.time())
         last_update_time = time.time()
         
-        # Stats counters
-        stats = state.get("stats", {"sent": 0, "failed": 0, "skipped": 0})
-        sent_count = stats["sent"]
+        total_users_count = state.get("total_users", 0)
+        total_chats_count = state.get("total_chats", 0)
+        
+        stats = state.get("stats", {"sent_users": 0, "sent_chats": 0, "failed": 0, "skipped": 0})
+        sent_users = stats.get("sent_users", 0)
+        sent_chats = stats.get("sent_chats", 0)
         failed_count = stats["failed"]
         skipped_count = stats["skipped"]
 
@@ -145,15 +122,14 @@ async def run_broadcast(state, targets, status_message=None):
                 content = await app.get_messages(content_chat_id, content_msg_id)
                 if not content: raise ValueError
             except:
-                if status_message: await status_message.edit_text(f"{EMOJI.ERROR} <b>Error:</b> Content message deleted.")
+                if status_message: await status_message.edit_text("❌ <b>Error:</b> The original message to be broadcasted was deleted.")
                 return
 
-        # Prepare List Slice
         remaining_targets = targets[start_index:]
         total_targets = len(targets)
 
         async def deliver(chat_id):
-            nonlocal sent_count, failed_count, skipped_count
+            nonlocal sent_users, sent_chats, failed_count, skipped_count
             
             if chat_id in FAILED_IDS:
                 skipped_count += 1
@@ -165,7 +141,6 @@ async def run_broadcast(state, targets, status_message=None):
                         if mode == "forward":
                             await content.forward(chat_id)
                         elif content.text:
-                            # Send pure text as a new message to force Web Previews
                             kwargs = {"reply_markup": content.reply_markup, "parse_mode": ParseMode.HTML}
                             try:
                                 await app.send_message(chat_id, content.text.html, disable_web_page_preview=False, **kwargs)
@@ -173,17 +148,20 @@ async def run_broadcast(state, targets, status_message=None):
                                 from pyrogram.types import LinkPreviewOptions
                                 await app.send_message(chat_id, content.text.html, link_preview_options=LinkPreviewOptions(is_disabled=False), **kwargs)
                         else:
-                            # Media like photos/videos are copied safely
                             await content.copy(chat_id, reply_markup=content.reply_markup)
                     else:
-                        # Send direct text payload extracted from the command
                         try:
                             await app.send_message(chat_id, text_payload, disable_web_page_preview=False, parse_mode=ParseMode.HTML)
                         except TypeError:
                             from pyrogram.types import LinkPreviewOptions
                             await app.send_message(chat_id, text_payload, link_preview_options=LinkPreviewOptions(is_disabled=False), parse_mode=ParseMode.HTML)
                     
-                    sent_count += 1
+                    if str(chat_id).startswith("-"):
+                        sent_chats += 1
+                    else:
+                        sent_users += 1
+                        
+                    await asyncio.sleep(0.1)
 
             except FloodWait as e:
                 if e.value > 60:
@@ -210,7 +188,11 @@ async def run_broadcast(state, targets, status_message=None):
                             except TypeError:
                                 from pyrogram.types import LinkPreviewOptions
                                 await app.send_message(chat_id, text_payload, link_preview_options=LinkPreviewOptions(is_disabled=False), parse_mode=ParseMode.HTML)
-                        sent_count += 1
+                                
+                        if str(chat_id).startswith("-"):
+                            sent_chats += 1
+                        else:
+                            sent_users += 1
                     except:
                         failed_count += 1
 
@@ -223,7 +205,7 @@ async def run_broadcast(state, targets, status_message=None):
         i = 0
         while i < len(remaining_targets):
             if CANCEL_BROADCAST:
-                if status_message: await status_message.edit_text(f"{EMOJI.STOP} <b>Cancelled.</b>")
+                if status_message: await status_message.edit_text("🛑 <b>Broadcast has been successfully cancelled.</b>")
                 if os.path.exists(STATE_FILE): os.remove(STATE_FILE)
                 return
 
@@ -243,8 +225,11 @@ async def run_broadcast(state, targets, status_message=None):
                 "initiator": initiator_id,
                 "start_time": start_time,
                 "current_index": current_real_index,
+                "total_users": total_users_count,
+                "total_chats": total_chats_count,
                 "stats": {
-                    "sent": sent_count,
+                    "sent_users": sent_users,
+                    "sent_chats": sent_chats,
                     "failed": failed_count,
                     "skipped": skipped_count
                 }
@@ -253,10 +238,10 @@ async def run_broadcast(state, targets, status_message=None):
             await write_json_async(STATE_FILE, new_state)
             await save_failed_list()
 
-            if status_message and (time.time() - last_update_time) > 5:
+            if status_message and (time.time() - last_update_time) > 15:
                 elapsed = time.time() - start_time
                 if elapsed == 0: elapsed = 1
-                total_done = sent_count + failed_count + skipped_count
+                total_done = sent_users + sent_chats + failed_count + skipped_count
                 speed = (total_done - stats.get("skipped", 0)) / elapsed 
                 if speed <= 0: speed = 0.1
                 
@@ -265,13 +250,14 @@ async def run_broadcast(state, targets, status_message=None):
 
                 try:
                     await status_message.edit_text(
-                        f"{EMOJI.BROADCAST} <b>Broadcast Running...</b>\n\n"
-                        f"{EMOJI.CHECK} <b>Sent:</b> <code>{sent_count}</code>\n"
-                        f"{EMOJI.ERROR} <b>Failed:</b> <code>{failed_count}</code>\n"
-                        f"{EMOJI.SKIP} <b>Skipped:</b> <code>{skipped_count}</code>\n"
-                        f"{EMOJI.STATS} <b>Progress:</b> <code>{current_real_index}/{total_targets}</code>\n\n"
-                        f"{EMOJI.SPEED} <b>Speed:</b> <code>{round(speed, 1)} msg/s</code>\n"
-                        f"{EMOJI.TIMER} <b>ETA:</b> <code>{eta}</code>"
+                        "📢 <b>Broadcast in Progress...</b>\n\n"
+                        f"👤 <b>Users Sent:</b> <code>{sent_users}</code>\n"
+                        f"👥 <b>Chats Sent:</b> <code>{sent_chats}</code>\n"
+                        f"❌ <b>Failed:</b> <code>{failed_count}</code>\n"
+                        f"⏩ <b>Skipped:</b> <code>{skipped_count}</code>\n\n"
+                        f"📊 <b>Progress:</b> <code>{current_real_index} / {total_targets}</code>\n"
+                        f"⚡ <b>Speed:</b> <code>{round(speed, 1)} msg/s</code>\n"
+                        f"⏳ <b>ETA:</b> <code>{eta}</code>"
                     )
                     last_update_time = time.time()
                 except FloodWait as fw:
@@ -280,20 +266,25 @@ async def run_broadcast(state, targets, status_message=None):
                     pass
             
             i += BATCH_SIZE
+            await asyncio.sleep(1.5)
 
         if os.path.exists(STATE_FILE): os.remove(STATE_FILE)
         if os.path.exists(TARGETS_FILE): os.remove(TARGETS_FILE)
         
         final_text = (
-            f"{EMOJI.CHECK} <b>Broadcast Finished!</b>\n\n"
-            f"{EMOJI.CHATS} <b>Total Targets:</b> <code>{total_targets}</code>\n"
-            f"{EMOJI.CHECK} <b>Successful:</b> <code>{sent_count}</code>\n"
-            f"{EMOJI.ERROR} <b>Failed:</b> <code>{failed_count}</code>\n"
-            f"{EMOJI.SKIP} <b>Skipped (Blocked):</b> <code>{skipped_count}</code>\n"
-            f"{EMOJI.TIMER} <b>Time Taken:</b> <code>{get_readable_time(time.time() - start_time)}</code>"
+            "✅ <b>Broadcast Completed Successfully!</b> 🎉\n\n"
+            "<b>Delivery Statistics:</b>\n"
+            f"  👤 <b>Sent to Users:</b> <code>{sent_users}</code>\n"
+            f"  👥 <b>Sent to Chats:</b> <code>{sent_chats}</code>\n"
+            f"  ❌ <b>Failed:</b> <code>{failed_count}</code>\n"
+            f"  🚫 <b>Skipped (Blocked/Invalid):</b> <code>{skipped_count}</code>\n\n"
+            "<b>Target Information:</b>\n"
+            f"  🎯 <b>Total Processed:</b> <code>{total_targets}</code>\n"
+            f"  📝 <b>Database Users:</b> <code>{total_users_count}</code> | <b>Chats:</b> <code>{total_chats_count}</code>\n\n"
+            f"⏱ <b>Total Time Taken:</b> <code>{get_readable_time(time.time() - start_time)}</code>"
         )
         
-        LOG.info(f"Broadcast finished. Success: {sent_count}, Failed: {failed_count}, Skipped: {skipped_count}")
+        LOG.info(f"Broadcast finished. Users: {sent_users}, Chats: {sent_chats}, Failed: {failed_count}, Skipped: {skipped_count}")
 
         if status_message:
             try:
@@ -307,13 +298,13 @@ async def run_broadcast(state, targets, status_message=None):
 @app.on_message(filters.command("broadcast") & SUDOERS)
 async def broadcast_command(client, message: Message):
     if BROADCAST_LOCK.locked():
-        return await message.reply_text(f"{EMOJI.WARN} <b>Broadcast is already running!</b>")
+        return await message.reply_text("⚠️ <b>A broadcast is currently already running!</b>")
 
     if os.path.exists(STATE_FILE) and os.path.exists(TARGETS_FILE):
         if "-new" not in (message.text or "").lower():
             return await message.reply_text(
-                f"{EMOJI.WARN} <b>Found unfinished broadcast!</b>\n"
-                f"Use <code>/resume_broadcast</code> to continue or <code>/broadcast -new</code> to restart."
+                "⚠️ <b>Found an unfinished broadcast!</b>\n\n"
+                "Use <code>/resume_broadcast</code> to continue where it left off, or <code>/broadcast -new</code> to start a fresh one."
             )
 
     query = (message.text or "").lower()
@@ -329,18 +320,17 @@ async def broadcast_command(client, message: Message):
 
     flags_to_remove = ["-all", "-users", "-chats", "-forward", "-copy", "-new"]
     for flag in flags_to_remove:
-        # Removes the flag regardless of uppercase/lowercase, avoiding spacing issues
         broadcast_text = re.sub(rf'(?i)\b{flag}\b', '', broadcast_text)
     
     broadcast_text = broadcast_text.strip()
 
     if not message.reply_to_message and not broadcast_text:
         return await message.reply_text(
-            f"{EMOJI.WARN} Please reply to a message OR provide text.\n\n"
-            f"<b>Usage:</b> <code>/broadcast -all [your text here]</code>"
+            "⚠️ <b>Please reply to a message OR provide text to broadcast.</b>\n\n"
+            "<b>Usage Example:</b> <code>/broadcast -all Hello everyone!</code>"
         )
 
-    msg = await message.reply_text(f"{EMOJI.TIMER} <b>Fetching users...</b>")
+    msg = await message.reply_text("⏳ <b>Fetching users and chats from the database...</b>")
     LOG.info(f"/broadcast triggered by user: {message.from_user.id}")
 
     users_list = []
@@ -355,8 +345,8 @@ async def broadcast_command(client, message: Message):
         users_list = await get_served_users()
     else:
         return await msg.edit_text(
-            f"{EMOJI.WARN} <b>Usage:</b>\n"
-            f"<code>/broadcast -all/-users/-chats [text]</code>"
+            "⚠️ <b>Invalid Usage:</b>\n"
+            "Please specify a target: <code>/broadcast -all</code>, <code>/broadcast -users</code>, or <code>/broadcast -chats</code>."
         )
 
     raw_targets = []
@@ -367,12 +357,12 @@ async def broadcast_command(client, message: Message):
             raw_targets.append(c.get("chat_id") if isinstance(c, dict) else c)
     except Exception as e:
         LOG.error(f"Error extracting IDs: {e}")
-        return await msg.edit_text(f"{EMOJI.ERROR} <b>Error extracting IDs:</b> {e}")
+        return await msg.edit_text(f"❌ <b>Error extracting IDs:</b> <code>{e}</code>")
 
     targets = list(set(raw_targets))
     
     if not targets:
-        return await msg.edit_text(f"{EMOJI.ERROR} <b>No targets found in database.</b>")
+        return await msg.edit_text("❌ <b>No targets found in the database.</b>")
 
     await write_json_async(TARGETS_FILE, targets)
 
@@ -385,7 +375,9 @@ async def broadcast_command(client, message: Message):
         "initiator": message.from_user.id,
         "start_time": time.time(),
         "current_index": 0,
-        "stats": {"sent": 0, "failed": 0, "skipped": 0}
+        "total_users": len(users_list),
+        "total_chats": len(chats_list),
+        "stats": {"sent_users": 0, "sent_chats": 0, "failed": 0, "skipped": 0}
     }
     await write_json_async(STATE_FILE, state)
 
@@ -394,16 +386,16 @@ async def broadcast_command(client, message: Message):
 @app.on_message(filters.command("resume_broadcast") & SUDOERS)
 async def resume_broadcast(client, message: Message):
     if not (os.path.exists(STATE_FILE) and os.path.exists(TARGETS_FILE)):
-        return await message.reply_text(f"{EMOJI.ERROR} <b>No broadcast to resume.</b>")
+        return await message.reply_text("❌ <b>There is no active or paused broadcast to resume.</b>")
     
-    msg = await message.reply_text(f"{EMOJI.RECYCLE} <b>Resuming Broadcast...</b>")
+    msg = await message.reply_text("♻️ <b>Resuming the previous broadcast...</b>")
     LOG.info(f"Broadcast resumed by user: {message.from_user.id}")
     
     state = load_json_sync(STATE_FILE)
     targets = load_json_sync(TARGETS_FILE)
     
     if not state or not targets:
-        return await msg.edit_text(f"{EMOJI.ERROR} <b>Save files are corrupted.</b> Start a new broadcast.")
+        return await msg.edit_text("❌ <b>Save files are corrupted. Please start a new broadcast.</b>")
         
     await run_broadcast(state, targets, msg)
 
@@ -412,7 +404,7 @@ async def cancel_broadcast_cmd(client, message: Message):
     global CANCEL_BROADCAST
     CANCEL_BROADCAST = True
     LOG.info(f"Broadcast cancelled by user: {message.from_user.id}")
-    await message.reply_text(f"{EMOJI.STOP} <b>Stopping broadcast...</b>")
+    await message.reply_text("🛑 <b>Stopping the current broadcast immediately...</b>")
 
 @app.on_message(filters.command("clearfailed") & SUDOERS)
 async def clear_failed(client, message: Message):
@@ -420,7 +412,7 @@ async def clear_failed(client, message: Message):
     FAILED_IDS.clear()
     if os.path.exists(FAILED_FILE): os.remove(FAILED_FILE)
     LOG.info(f"Failed cache cleared by user: {message.from_user.id}")
-    await message.reply_text(f"{EMOJI.CHECK} <b>Failed cache cleared.</b>")
+    await message.reply_text("✅ <b>Successfully cleared the skipped/failed user cache.</b>")
 
 async def auto_resume_check():
     await asyncio.sleep(5)
@@ -432,13 +424,13 @@ async def auto_resume_check():
             current = state.get("current_index", 0)
             
             text = (
-                f"{EMOJI.WARN} <b>Broadcast Interrupted!</b>\n"
-                f"{EMOJI.STATS} <b>Progress:</b> <code>{current}/{total}</code>\n"
-                "<b>Do you want to resume?</b>"
+                "⚠️ <b>Broadcast Interrupted!</b>\n\n"
+                f"📊 <b>Saved Progress:</b> <code>{current} / {total}</code>\n\n"
+                "Would you like to resume it now?"
             )
             buttons = InlineKeyboardMarkup([[
                 InlineKeyboardButton("✅ Resume", callback_data="resume_broadcast"),
-                InlineKeyboardButton("❌ Abort", callback_data="cancel_broadcast")
+                InlineKeyboardButton("❌ Cancel", callback_data="cancel_broadcast")
             ]])
             
             if SUDOERS:
@@ -456,15 +448,15 @@ async def broadcast_callback(client, query: CallbackQuery):
         CANCEL_BROADCAST = True
         if os.path.exists(STATE_FILE): os.remove(STATE_FILE)
         if os.path.exists(TARGETS_FILE): os.remove(TARGETS_FILE)
-        await query.message.edit_text(f"{EMOJI.STOP} <b>Broadcast Cancelled.</b>")
+        await query.message.edit_text("🛑 <b>Broadcast Successfully Cancelled.</b>")
     else:
         state = load_json_sync(STATE_FILE)
         targets = load_json_sync(TARGETS_FILE)
         if state and targets:
-            await query.message.edit_text(f"{EMOJI.RECYCLE} <b>Resuming...</b>")
+            await query.message.edit_text("♻️ <b>Resuming Broadcast...</b>")
             await run_broadcast(state, targets, query.message)
         else:
-            await query.message.edit_text(f"{EMOJI.ERROR} <b>Data expired.</b>")
+            await query.message.edit_text("❌ <b>Broadcast data has expired or is invalid.</b>")
 
 
 async def auto_clean():
