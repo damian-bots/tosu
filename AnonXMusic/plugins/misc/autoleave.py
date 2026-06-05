@@ -1,5 +1,4 @@
 import asyncio
-import random
 from datetime import datetime, timedelta
 from contextlib import suppress
 
@@ -20,24 +19,25 @@ EXCLUDED_CHATS = {
 }
 
 # Explicitly named to reflect the maximum limit per individual assistant
-MAX_LEAVE_PER_ASSISTANT = 120
+MAX_LEAVE_PER_ASSISTANT = 200
 
 
 def get_next_run_time() -> datetime:
-    """Get random time between 4-6 AM IST tomorrow."""
+    """Get the exact next run time for 4:30 AM IST."""
     now = datetime.now(IST)
     
-    random_minutes = random.randint(0, 120)
+    # Target 4:30 AM today
+    target = now.replace(hour=13, minute=45, second=0, microsecond=0)
     
-    tomorrow = now + timedelta(days=1)
-    target = tomorrow.replace(hour=4, minute=0, second=0, microsecond=0)
-    target += timedelta(minutes=random_minutes)
-    
+    # If 4:30 AM has already passed today, target 4:30 AM tomorrow
+    if now >= target:
+        target += timedelta(days=1)
+        
     return target
 
 
 async def auto_leave():
-    """Leave inactive chats at random time between 4-6 AM IST daily."""
+    """Leave inactive chats exactly at 4:30 AM IST daily."""
     if not config.AUTO_LEAVING_ASSISTANT:
         return
     
@@ -48,7 +48,8 @@ async def auto_leave():
         wait_seconds = int((next_run - now).total_seconds())
         
         # Wait until scheduled time
-        await asyncio.sleep(wait_seconds)
+        if wait_seconds > 0:
+            await asyncio.sleep(wait_seconds)
         
         # Get assistants
         from AnonXMusic.core.userbot import assistants
