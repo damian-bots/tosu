@@ -29,6 +29,6 @@ for filename in os.listdir(r"./strings/langs/"):
                 languages[language_name][item] = languages["en"][item]
     try:
         languages_present[language_name] = languages[language_name]["name"]
-    except:
-        print("There is some issue with the language file inside bot.")
+    except Exception as e:
+        print(f"There is some issue with the language file '{language_name}': {e}")
         exit()

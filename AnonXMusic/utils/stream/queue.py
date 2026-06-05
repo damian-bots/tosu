@@ -1,9 +1,12 @@
 import asyncio
+import logging
 from typing import Union
 
 from AnonXMusic.misc import db
 from AnonXMusic.utils.formatters import check_duration, seconds_to_min
 from config import autoclean, time_to_seconds
+
+LOGGER = logging.getLogger(__name__)
 
 
 async def put_queue(
@@ -21,7 +24,8 @@ async def put_queue(
     title = title.title()
     try:
         duration_in_seconds = time_to_seconds(duration) - 3
-    except:
+    except Exception as e:
+        LOGGER.debug(f"Failed to parse duration '{duration}': {e}")
         duration_in_seconds = 0
     put = {
         "title": title,
@@ -64,7 +68,8 @@ async def put_queue_index(
                 None, check_duration, vidid
             )
             duration = seconds_to_min(dur)
-        except:
+        except Exception as e:
+            LOGGER.debug(f"Failed to check duration for {vidid}: {e}")
             duration = "ᴜʀʟ sᴛʀᴇᴀᴍ"
             dur = 0
     else:

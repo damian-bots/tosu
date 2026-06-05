@@ -31,8 +31,8 @@ async def init():
         users = await get_banned_users()
         for user_id in users:
             BANNED_USERS.add(user_id)
-    except:
-        pass
+    except Exception as e:
+        LOGGER(__name__).warning(f"Failed to load banned users: {e}")
     await app.start()
     for all_module in ALL_MODULES:
         importlib.import_module("AnonXMusic.plugins" + all_module)
@@ -46,8 +46,8 @@ async def init():
             "Please turn on the videochat of your log group\channel.\n\nStopping Bot..."
         )
         exit()
-    except:
-        pass
+    except Exception as e:
+        LOGGER(__name__).warning(f"Stream call test failed: {e}")
     await Anony.decorators()
     LOGGER("AnonXMusic").info(
         "\x4a\x6f\x69\x6e\x20\x40\x41\x72\x63\x55\x70\x64\x61\x74\x65\x73"
