@@ -3,12 +3,13 @@ from pyrogram.types import Message
 
 from AnonXMusic import app
 from AnonXMusic.core.call import Anony
-from AnonXMusic.misc import SUDOERS, db
+from AnonXMusic.misc import db
 from AnonXMusic.utils import AdminRightsCheck
-from AnonXMusic.utils.database import is_active_chat, is_nonadmin_chat
+from AnonXMusic.utils.database import is_active_chat
 from AnonXMusic.utils.decorators.language import languageCB
+from AnonXMusic.utils.helpers import check_callback_admin
 from AnonXMusic.utils.inline import close_markup, speed_markup
-from config import BANNED_USERS, adminlist
+from config import BANNED_USERS
 
 checker = []
 
@@ -45,15 +46,8 @@ async def del_back_playlist(client, CallbackQuery, _):
     chat_id = int(chat)
     if not await is_active_chat(chat_id):
         return await CallbackQuery.answer(_["general_5"], show_alert=True)
-    is_non_admin = await is_nonadmin_chat(CallbackQuery.message.chat.id)
-    if not is_non_admin:
-        if CallbackQuery.from_user.id not in SUDOERS:
-            admins = adminlist.get(CallbackQuery.message.chat.id)
-            if not admins:
-                return await CallbackQuery.answer(_["admin_13"], show_alert=True)
-            else:
-                if CallbackQuery.from_user.id not in admins:
-                    return await CallbackQuery.answer(_["admin_14"], show_alert=True)
+    if not await check_callback_admin(CallbackQuery, chat_id, _):
+        return
     playing = db.get(chat_id)
     if not playing:
         return await CallbackQuery.answer(_["queue_2"], show_alert=True)

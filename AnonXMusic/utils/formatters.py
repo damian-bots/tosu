@@ -93,27 +93,10 @@ def speed_converter(seconds, speed):
     if str(speed) == str("2.0"):
         seconds = seconds - ((50 * seconds) // 100)
     collect = seconds
-    if seconds is not None:
-        seconds = int(seconds)
-        d, h, m, s = (
-            seconds // (3600 * 24),
-            seconds // 3600 % 24,
-            seconds % 3600 // 60,
-            seconds % 3600 % 60,
-        )
-        if d > 0:
-            convert = "{:02d}:{:02d}:{:02d}:{:02d}".format(d, h, m, s)
-            return convert, collect
-        elif h > 0:
-            convert = "{:02d}:{:02d}:{:02d}".format(h, m, s)
-            return convert, collect
-        elif m > 0:
-            convert = "{:02d}:{:02d}".format(m, s)
-            return convert, collect
-        elif s > 0:
-            convert = "00:{:02d}".format(s)
-            return convert, collect
-    return "-"
+    convert = seconds_to_min(seconds)
+    if convert == "-":
+        return "-"
+    return convert, collect
 
 
 def check_duration(file_path):

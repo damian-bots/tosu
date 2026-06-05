@@ -14,6 +14,7 @@ from AnonXMusic.utils.channelplay import get_channeplayCB
 from AnonXMusic.utils.decorators.language import languageCB
 from AnonXMusic.utils.decorators.play import PlayWrapper
 from AnonXMusic.utils.formatters import formats
+from AnonXMusic.utils.helpers import check_callback_user, format_stream_error
 from AnonXMusic.utils.inline import (
     botplaylist_markup,
     livestream_markup,
@@ -108,9 +109,7 @@ async def play_commnd(
                     forceplay=fplay,
                 )
             except Exception as e:
-                ex_type = type(e).__name__
-                err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
-                return await mystic.edit_text(err)
+                return await mystic.edit_text(format_stream_error(e, _))
             return await mystic.delete()
         return
         
@@ -153,9 +152,7 @@ async def play_commnd(
                     forceplay=fplay,
                 )
             except Exception as e:
-                ex_type = type(e).__name__
-                err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
-                return await mystic.edit_text(err)
+                return await mystic.edit_text(format_stream_error(e, _))
             return await mystic.delete()
         return
         
@@ -303,9 +300,7 @@ async def play_commnd(
                 forceplay=fplay,
             )
         except Exception as e:
-            ex_type = type(e).__name__
-            err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
-            return await mystic.edit_text(err)
+            return await mystic.edit_text(format_stream_error(e, _))
         await mystic.delete()
         return await play_logs(message, streamtype=streamtype)
     else:
@@ -373,11 +368,8 @@ async def play_music(client, CallbackQuery, _):
     callback_data = CallbackQuery.data.strip()
     callback_request = callback_data.split(None, 1)[1]
     vidid, user_id, mode, cplay, fplay = callback_request.split("|")
-    if CallbackQuery.from_user.id != int(user_id):
-        try:
-            return await CallbackQuery.answer(_["playcb_1"], show_alert=True)
-        except Exception:
-            return
+    if not await check_callback_user(CallbackQuery, user_id, _):
+        return
     try:
         chat_id, channel = await get_channeplayCB(_, cplay, CallbackQuery)
     except Exception:
@@ -430,9 +422,7 @@ async def play_music(client, CallbackQuery, _):
             forceplay=ffplay,
         )
     except Exception as e:
-        ex_type = type(e).__name__
-        err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
-        return await mystic.edit_text(err)
+        return await mystic.edit_text(format_stream_error(e, _))
     return await mystic.delete()
 
 
@@ -460,11 +450,8 @@ async def play_playlists_command(client, CallbackQuery, _):
         cplay,
         fplay,
     ) = callback_request.split("|")
-    if CallbackQuery.from_user.id != int(user_id):
-        try:
-            return await CallbackQuery.answer(_["playcb_1"], show_alert=True)
-        except Exception:
-            return
+    if not await check_callback_user(CallbackQuery, user_id, _):
+        return
     try:
         chat_id, channel = await get_channeplayCB(_, cplay, CallbackQuery)
     except Exception:
@@ -528,9 +515,7 @@ async def play_playlists_command(client, CallbackQuery, _):
             forceplay=ffplay,
         )
     except Exception as e:
-        ex_type = type(e).__name__
-        err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
-        return await mystic.edit_text(err)
+        return await mystic.edit_text(format_stream_error(e, _))
     return await mystic.delete()
 
 
@@ -547,11 +532,8 @@ async def slider_queries(client, CallbackQuery, _):
         cplay,
         fplay,
     ) = callback_request.split("|")
-    if CallbackQuery.from_user.id != int(user_id):
-        try:
-            return await CallbackQuery.answer(_["playcb_1"], show_alert=True)
-        except Exception:
-            return
+    if not await check_callback_user(CallbackQuery, user_id, _):
+        return
     what = str(what)
     rtype = int(rtype)
     if what == "F":

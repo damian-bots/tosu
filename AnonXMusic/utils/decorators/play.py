@@ -7,7 +7,7 @@ from pyrogram.errors import (
     UserAlreadyParticipant,
     UserNotParticipant,
 )
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import InlineKeyboardMarkup
 
 from AnonXMusic import YouTube, app
 from AnonXMusic.logging import LOGGER
@@ -21,6 +21,7 @@ from AnonXMusic.utils.database import (
     is_active_chat,
     is_maintenance,
 )
+from AnonXMusic.utils.helpers import get_anonymous_admin_markup
 from AnonXMusic.utils.inline import botplaylist_markup
 from config import PLAYLIST_IMG_URL, SUPPORT_CHAT, adminlist
 from strings import get_string
@@ -33,17 +34,9 @@ def PlayWrapper(command):
         language = await get_lang(message.chat.id)
         _ = get_string(language)
         if message.sender_chat:
-            upl = InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            text="ʜᴏᴡ ᴛᴏ ғɪx ?",
-                            callback_data="AnonymousAdmin",
-                        ),
-                    ]
-                ]
+            return await message.reply_text(
+                _["general_3"], reply_markup=get_anonymous_admin_markup()
             )
-            return await message.reply_text(_["general_3"], reply_markup=upl)
 
         if await is_maintenance() is False:
             if message.from_user.id not in SUDOERS:
