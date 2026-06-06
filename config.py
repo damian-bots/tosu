@@ -29,7 +29,7 @@ API_URL = getenv("API_URL", "https://api.arcmusic.fun")
 API_KEY = getenv("API_KEY")
 
 API_URL2 = getenv("API_URL2", "https://api.onegrab.fun")
-API_KEY2 = getenv("API_KEY2", "eb96ab_tRZkz48isy9Kw7F0d1XqnIhXAuoln6QX")
+API_KEY2 = getenv("API_KEY2")
 
 # Get this value from @FallenxBot on Telegram by /id
 OWNER_ID = 603536072
