@@ -3,7 +3,6 @@ from strings import get_string
 from AnonXMusic import app
 from AnonXMusic.misc import SUDOERS
 from AnonXMusic.utils.database import get_lang, is_maintenance
-from AnonXMusic.logging import LOGGER
 
 
 def language(mystic):
@@ -16,14 +15,13 @@ def language(mystic):
                 )
         try:
             await message.delete()
-        except Exception:
+        except:
             pass
 
         try:
             language = await get_lang(message.chat.id)
             language = get_string(language)
-        except Exception as e:
-            LOGGER(__name__).debug(f"Language lookup failed, defaulting to en: {e}")
+        except:
             language = get_string("en")
         return await mystic(_, message, language)
 
@@ -41,8 +39,7 @@ def languageCB(mystic):
         try:
             language = await get_lang(CallbackQuery.message.chat.id)
             language = get_string(language)
-        except Exception as e:
-            LOGGER(__name__).debug(f"Language lookup failed for callback, defaulting to en: {e}")
+        except:
             language = get_string("en")
         return await mystic(_, CallbackQuery, language)
 
@@ -54,8 +51,7 @@ def LanguageStart(mystic):
         try:
             language = await get_lang(message.chat.id)
             language = get_string(language)
-        except Exception as e:
-            LOGGER(__name__).debug(f"Language lookup failed at start, defaulting to en: {e}")
+        except:
             language = get_string("en")
         return await mystic(_, message, language)
 

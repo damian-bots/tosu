@@ -82,7 +82,7 @@ async def authusers(client, message: Message, _):
             try:
                 user = (await app.get_users(user_id)).first_name
                 j += 1
-            except Exception:
+            except:
                 continue
             text += f"{j}➤ {user}[<code>{user_id}</code>]\n"
             text += f"   {_['auth_8']} {admin_name}[<code>{admin_id}</code>]\n\n"

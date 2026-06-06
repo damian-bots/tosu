@@ -32,7 +32,7 @@ async def is_heroku():
 async def log_(client, message, _):
     try:
         await message.reply_document(document="log.txt")
-    except Exception:
+    except:
         await message.reply_text(_["server_1"])
 
 
@@ -86,10 +86,10 @@ async def update_(client, message, _):
                 )
                 await remove_active_chat(x)
                 await remove_active_video_chat(x)
-            except Exception:
+            except:
                 pass
         await response.edit(f"{nrs.text}\n\n{_['server_7']}")
-    except Exception:
+    except:
         pass
 
     if await is_heroku():
@@ -122,14 +122,14 @@ async def restart_(_, message):
             )
             await remove_active_chat(x)
             await remove_active_video_chat(x)
-        except Exception:
+        except:
             pass
 
     try:
         shutil.rmtree("downloads")
         shutil.rmtree("raw_files")
         shutil.rmtree("cache")
-    except Exception:
+    except:
         pass
     await response.edit_text(
         "» ʀᴇsᴛᴀʀᴛ ᴘʀᴏᴄᴇss sᴛᴀʀᴛᴇᴅ, ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ ғᴏʀ ғᴇᴡ sᴇᴄᴏɴᴅs ᴜɴᴛɪʟ ᴛʜᴇ ʙᴏᴛ sᴛᴀʀᴛs..."

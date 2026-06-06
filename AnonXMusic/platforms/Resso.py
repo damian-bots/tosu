@@ -33,7 +33,7 @@ class RessoAPI:
                 des = tag.get("content", None)
                 try:
                     des = des.split("·")[0]
-                except Exception:
+                except:
                     pass
         if des == "":
             return

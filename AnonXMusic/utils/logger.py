@@ -28,6 +28,6 @@ async def play_logs(message, streamtype):
                     parse_mode=ParseMode.HTML,
                     disable_web_page_preview=True,
                 )
-            except Exception:
+            except:
                 pass
         return

@@ -40,22 +40,22 @@ async def get_thumb(videoid):
                 title = result["title"]
                 title = re.sub(r"\W+", " ", title)
                 title = title.title()
-            except Exception:
+            except:
                 title = "Unsupported Title"
             try:
                 duration = result["duration"]
-            except Exception:
+            except:
                 duration = "Unknown Mins"
                 
             thumbnail = result["thumbnails"][0]["url"].split("?")[0]
             
             try:
                 views = result["viewCount"]["short"]
-            except Exception:
+            except:
                 views = "Unknown Views"
             try:
                 channel = result["channel"]["name"]
-            except Exception:
+            except:
                 channel = "Unknown Channel"
 
         # Download the thumbnail
@@ -149,7 +149,7 @@ async def get_thumb(videoid):
         # Clean up temporary file
         try:
             os.remove(f"cache/thumb{videoid}.png")
-        except OSError:
+        except:
             pass
             
         # Save final output

@@ -1,4 +1,3 @@
-import logging
 import os
 from random import randint
 from typing import Union
@@ -15,8 +14,6 @@ from AnonXMusic.utils.inline import aq_markup, close_markup, stream_markup
 from AnonXMusic.utils.pastebin import AnonyBin
 from AnonXMusic.utils.stream.queue import put_queue, put_queue_index
 from AnonXMusic.utils.thumbnails import get_thumb
-
-LOGGER = logging.getLogger(__name__)
 
 
 async def stream(
@@ -50,8 +47,7 @@ async def stream(
                     thumbnail,
                     vidid,
                 ) = await YouTube.details(search, False if spotify else True)
-            except Exception as e:
-                LOGGER.debug(f"Failed to get details for {search}: {e}")
+            except:
                 continue
             if str(duration_min) == "None":
                 continue
@@ -81,8 +77,7 @@ async def stream(
                     file_path, direct = await YouTube.download(
                         vidid, mystic, video=status, videoid=True
                     )
-                except Exception as e:
-                    LOGGER.error(f"Playlist download failed for {vidid}: {e}")
+                except:
                     raise AssistantErr(_["play_14"])
                 await Anony.join_call(
                     chat_id,
@@ -146,8 +141,7 @@ async def stream(
             file_path, direct = await YouTube.download(
                 vidid, mystic, videoid=True, video=status
             )
-        except Exception as e:
-            LOGGER.error(f"YouTube download failed for {vidid}: {e}")
+        except:
             raise AssistantErr(_["play_14"])
         if await is_active_chat(chat_id):
             await put_queue(

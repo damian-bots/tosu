@@ -38,27 +38,27 @@ class TeleAPI:
             file_name = file.file_name
             if file_name is None:
                 file_name = "ᴛᴇʟᴇɢʀᴀᴍ ᴀᴜᴅɪᴏ" if audio else "ᴛᴇʟᴇɢʀᴀᴍ ᴠɪᴅᴇᴏ"
-        except Exception:
+        except:
             file_name = "ᴛᴇʟᴇɢʀᴀᴍ ᴀᴜᴅɪᴏ" if audio else "ᴛᴇʟᴇɢʀᴀᴍ ᴠɪᴅᴇᴏ"
         return file_name
 
     async def get_duration(self, file):
         try:
             dur = seconds_to_min(file.duration)
-        except Exception:
+        except:
             dur = "Unknown"
         return dur
 
     async def get_duration(self, filex, file_path):
         try:
             dur = seconds_to_min(filex.duration)
-        except Exception:
+        except:
             try:
                 dur = await asyncio.get_event_loop().run_in_executor(
                     None, check_duration, file_path
                 )
                 dur = seconds_to_min(dur)
-            except Exception:
+            except:
                 return "Unknown"
         return dur
 
@@ -78,7 +78,7 @@ class TeleAPI:
                         else "ogg"
                     )
                 )
-            except Exception:
+            except:
                 file_name = audio.file_unique_id + "." + "ogg"
             file_name = os.path.join(os.path.realpath("downloads"), file_name)
         if video:
@@ -86,7 +86,7 @@ class TeleAPI:
                 file_name = (
                     video.file_unique_id + "." + (video.file_name.split(".")[-1])
                 )
-            except Exception:
+            except:
                 file_name = video.file_unique_id + "." + "mp4"
             file_name = os.path.join(os.path.realpath("downloads"), file_name)
         return file_name
@@ -146,7 +146,7 @@ class TeleAPI:
                                     reply_markup=upl,
                                 )
                                 checker[counter] = 100
-                            except Exception:
+                            except:
                                 pass
 
             speed_counter[message.id] = time.time()
@@ -160,10 +160,10 @@ class TeleAPI:
                     elapsed = get_readable_time(
                         int(int(time.time()) - int(speed_counter[message.id]))
                     )
-                except Exception:
+                except:
                     elapsed = "0 sᴇᴄᴏɴᴅs"
                 await mystic.edit_text(_["tg_2"].format(elapsed))
-            except Exception:
+            except:
                 await mystic.edit_text(_["tg_3"])
 
         task = asyncio.create_task(down_load())

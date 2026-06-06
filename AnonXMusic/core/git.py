@@ -59,7 +59,7 @@ def git():
         repo.heads[config.UPSTREAM_BRANCH].checkout(True)
         try:
             repo.create_remote("origin", config.UPSTREAM_REPO)
-        except Exception:
+        except BaseException:
             pass
         nrs = repo.remote("origin")
         nrs.fetch(config.UPSTREAM_BRANCH)

@@ -119,7 +119,7 @@ async def welcome(client, message: Message):
             if await is_banned_user(member.id):
                 try:
                     await message.chat.ban_member(member.id)
-                except Exception:
+                except:
                     pass
             if member.id == app.id:
                 if message.chat.type != ChatType.SUPERGROUP:

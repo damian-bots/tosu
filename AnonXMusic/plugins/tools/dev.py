@@ -129,12 +129,12 @@ async def forceclose_command(_, CallbackQuery):
             return await CallbackQuery.answer(
                 "» ɪᴛ'ʟʟ ʙᴇ ʙᴇᴛᴛᴇʀ ɪғ ʏᴏᴜ sᴛᴀʏ ɪɴ ʏᴏᴜʀ ʟɪᴍɪᴛs ʙᴀʙʏ.", show_alert=True
             )
-        except Exception:
+        except:
             return
     await CallbackQuery.message.delete()
     try:
         await CallbackQuery.answer()
-    except Exception:
+    except:
         return
 
 

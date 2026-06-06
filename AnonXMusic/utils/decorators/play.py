@@ -7,10 +7,9 @@ from pyrogram.errors import (
     UserAlreadyParticipant,
     UserNotParticipant,
 )
-from pyrogram.types import InlineKeyboardMarkup
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from AnonXMusic import YouTube, app
-from AnonXMusic.logging import LOGGER
 from AnonXMusic.misc import SUDOERS
 from AnonXMusic.utils.database import (
     get_assistant,
@@ -21,7 +20,6 @@ from AnonXMusic.utils.database import (
     is_active_chat,
     is_maintenance,
 )
-from AnonXMusic.utils.helpers import get_anonymous_admin_markup
 from AnonXMusic.utils.inline import botplaylist_markup
 from config import PLAYLIST_IMG_URL, SUPPORT_CHAT, adminlist
 from strings import get_string
@@ -34,9 +32,17 @@ def PlayWrapper(command):
         language = await get_lang(message.chat.id)
         _ = get_string(language)
         if message.sender_chat:
-            return await message.reply_text(
-                _["general_3"], reply_markup=get_anonymous_admin_markup()
+            upl = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            text="ʜᴏᴡ ᴛᴏ ғɪx ?",
+                            callback_data="AnonymousAdmin",
+                        ),
+                    ]
+                ]
             )
+            return await message.reply_text(_["general_3"], reply_markup=upl)
 
         if await is_maintenance() is False:
             if message.from_user.id not in SUDOERS:
@@ -47,7 +53,7 @@ def PlayWrapper(command):
 
         try:
             await message.delete()
-        except Exception:
+        except:
             pass
 
         audio_telegram = (
@@ -77,8 +83,7 @@ def PlayWrapper(command):
                 return await message.reply_text(_["setting_7"])
             try:
                 chat = await app.get_chat(chat_id)
-            except Exception as e:
-                LOGGER(__name__).debug(f"Failed to get chat {chat_id}: {e}")
+            except:
                 return await message.reply_text(_["cplay_4"])
             channel = chat.title
         else:
@@ -132,8 +137,8 @@ def PlayWrapper(command):
                         invitelink = message.chat.username
                         try:
                             await userbot.resolve_peer(invitelink)
-                        except Exception as e:
-                            LOGGER(__name__).debug(f"resolve_peer failed for invite link: {e}")
+                        except:
+                            pass
                     else:
                         try:
                             invitelink = await app.export_chat_invite_link(chat_id)
@@ -172,8 +177,8 @@ def PlayWrapper(command):
 
                 try:
                     await userbot.resolve_peer(chat_id)
-                except Exception as e:
-                    LOGGER(__name__).debug(f"resolve_peer failed for chat {chat_id}: {e}")
+                except:
+                    pass
 
         return await command(
             client,

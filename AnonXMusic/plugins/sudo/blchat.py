@@ -23,7 +23,7 @@ async def blacklist_chat_func(client, message: Message, _):
         await message.reply_text(_["black_9"])
     try:
         await app.leave_chat(chat_id)
-    except Exception:
+    except:
         pass
 
 
@@ -51,7 +51,7 @@ async def all_chats(client, message: Message, _):
     for count, chat_id in enumerate(await blacklisted_chats(), 1):
         try:
             title = (await app.get_chat(chat_id)).title
-        except Exception:
+        except:
             title = "ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ"
         j = 1
         text += f"{count}. {title}[<code>{chat_id}</code>]\n"

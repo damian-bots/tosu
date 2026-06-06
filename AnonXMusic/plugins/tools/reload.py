@@ -42,7 +42,7 @@ async def reload_admin_cache(client, message: Message, _):
         now = int(time.time()) + 180
         rel[message.chat.id] = now
         await message.reply_text(_["reload_2"])
-    except Exception:
+    except:
         await message.reply_text(_["reload_3"])
 
 
@@ -54,7 +54,7 @@ async def restartbot(client, message: Message, _):
     try:
         db[message.chat.id] = []
         await Anony.stop_stream_force(message.chat.id)
-    except Exception:
+    except:
         pass
     userbot = await get_assistant(message.chat.id)
     try:
@@ -62,13 +62,13 @@ async def restartbot(client, message: Message, _):
             await userbot.resolve_peer(message.chat.username)
         else:
             await userbot.resolve_peer(message.chat.id)
-    except Exception:
+    except:
         pass
     chat_id = await get_cmode(message.chat.id)
     if chat_id:
         try:
             got = await app.get_chat(chat_id)
-        except Exception:
+        except:
             pass
         userbot = await get_assistant(chat_id)
         try:
@@ -76,12 +76,12 @@ async def restartbot(client, message: Message, _):
                 await userbot.resolve_peer(got.username)
             else:
                 await userbot.resolve_peer(chat_id)
-        except Exception:
+        except:
             pass
         try:
             db[chat_id] = []
             await Anony.stop_stream_force(chat_id)
-        except Exception:
+        except:
             pass
     return await mystic.edit_text(_["reload_5"].format(app.mention))
 
@@ -96,7 +96,7 @@ async def close_menu(_, query: CallbackQuery):
         )
         await asyncio.sleep(7)
         await umm.delete()
-    except Exception:
+    except:
         pass
 
 
@@ -114,12 +114,12 @@ async def stop_download(client, CallbackQuery: CallbackQuery, _):
             task.cancel()
             try:
                 lyrical.pop(message_id)
-            except Exception:
+            except:
                 pass
             await CallbackQuery.answer(_["tg_6"], show_alert=True)
             return await CallbackQuery.edit_message_text(
                 _["tg_7"].format(CallbackQuery.from_user.mention)
             )
-        except Exception:
+        except:
             return await CallbackQuery.answer(_["tg_8"], show_alert=True)
     await CallbackQuery.answer(_["tg_9"], show_alert=True)

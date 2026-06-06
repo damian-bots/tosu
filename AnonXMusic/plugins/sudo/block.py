@@ -50,7 +50,7 @@ async def sudoers_list(client, message: Message, _):
             user = await app.get_users(users)
             user = user.first_name if not user.mention else user.mention
             count += 1
-        except Exception:
+        except:
             continue
         msg += f"{count}➤ {user}\n"
     if count == 0:
