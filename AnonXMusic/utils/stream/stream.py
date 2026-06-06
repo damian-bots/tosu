@@ -222,6 +222,11 @@ async def stream(
             )
         except:
             raise AssistantErr(_["play_14"])
+        if not file_path or (direct and not os.path.isfile(file_path)):
+            return await mystic.edit_text(
+                _["play_dl_failed"].format("YouTube"),
+                disable_web_page_preview=True,
+            )
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
@@ -282,6 +287,11 @@ async def stream(
         file_path = result["filepath"]
         title = result["title"]
         duration_min = result["duration_min"]
+        if not file_path or not os.path.isfile(file_path):
+            return await mystic.edit_text(
+                _["play_dl_failed"].format("SoundCloud"),
+                disable_web_page_preview=True,
+            )
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
@@ -339,6 +349,12 @@ async def stream(
         duration_min = result.get("duration_min") or "0:00"
         thumbnail = result.get("thumb") or result.get("thumbnail") or ""
         link = result.get("link") or ""
+
+        if not file_path or (not file_path.startswith("http") and not os.path.isfile(file_path)):
+            return await mystic.edit_text(
+                _["play_dl_failed"].format(streamtype.replace("_api", "").title()),
+                disable_web_page_preview=True,
+            )
 
         _img_map = {
             "spotify":        config.SPOTIFY_PLAYLIST_IMG_URL,
@@ -399,6 +415,11 @@ async def stream(
         title = (result["title"]).title()
         duration_min = result["dur"]
         status = True if video else None
+        if not file_path or not os.path.isfile(file_path):
+            return await mystic.edit_text(
+                _["play_dl_failed"].format("Telegram"),
+                disable_web_page_preview=True,
+            )
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
