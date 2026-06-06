@@ -128,6 +128,26 @@ async def run_broadcast(state, targets, status_message=None):
         remaining_targets = targets[start_index:]
         total_targets = len(targets)
 
+        async def _send_one(chat_id):
+            if is_reply:
+                if mode == "forward":
+                    await content.forward(chat_id)
+                elif content.text:
+                    kwargs = {"reply_markup": content.reply_markup, "parse_mode": ParseMode.HTML}
+                    try:
+                        await app.send_message(chat_id, content.text.html, disable_web_page_preview=False, **kwargs)
+                    except TypeError:
+                        from pyrogram.types import LinkPreviewOptions
+                        await app.send_message(chat_id, content.text.html, link_preview_options=LinkPreviewOptions(is_disabled=False), **kwargs)
+                else:
+                    await content.copy(chat_id, reply_markup=content.reply_markup)
+            else:
+                try:
+                    await app.send_message(chat_id, text_payload, disable_web_page_preview=False, parse_mode=ParseMode.HTML)
+                except TypeError:
+                    from pyrogram.types import LinkPreviewOptions
+                    await app.send_message(chat_id, text_payload, link_preview_options=LinkPreviewOptions(is_disabled=False), parse_mode=ParseMode.HTML)
+
         async def deliver(chat_id):
             nonlocal sent_users, sent_chats, failed_count, skipped_count
             
@@ -135,72 +155,42 @@ async def run_broadcast(state, targets, status_message=None):
                 skipped_count += 1
                 return
 
-            try:
-                async with SEMAPHORE:
-                    if is_reply:
-                        if mode == "forward":
-                            await content.forward(chat_id)
-                        elif content.text:
-                            kwargs = {"reply_markup": content.reply_markup, "parse_mode": ParseMode.HTML}
-                            try:
-                                await app.send_message(chat_id, content.text.html, disable_web_page_preview=False, **kwargs)
-                            except TypeError:
-                                from pyrogram.types import LinkPreviewOptions
-                                await app.send_message(chat_id, content.text.html, link_preview_options=LinkPreviewOptions(is_disabled=False), **kwargs)
-                        else:
-                            await content.copy(chat_id, reply_markup=content.reply_markup)
-                    else:
-                        try:
-                            await app.send_message(chat_id, text_payload, disable_web_page_preview=False, parse_mode=ParseMode.HTML)
-                        except TypeError:
-                            from pyrogram.types import LinkPreviewOptions
-                            await app.send_message(chat_id, text_payload, link_preview_options=LinkPreviewOptions(is_disabled=False), parse_mode=ParseMode.HTML)
-                    
-                    if str(chat_id).startswith("-"):
-                        sent_chats += 1
-                    else:
-                        sent_users += 1
+            for attempt in range(3):
+                try:
+                    async with SEMAPHORE:
+                        await _send_one(chat_id)
                         
-                    await asyncio.sleep(0.1)
-
-            except FloodWait as e:
-                if e.value > 60:
-                    failed_count += 1
-                else:
-                    LOG.warning(f"FloodWait {e.value}s in chat {chat_id}")
-                    await asyncio.sleep(e.value)
-                    try:
-                        if is_reply:
-                            if mode == "forward":
-                                await content.forward(chat_id)
-                            elif content.text:
-                                kwargs = {"reply_markup": content.reply_markup, "parse_mode": ParseMode.HTML}
-                                try:
-                                    await app.send_message(chat_id, content.text.html, disable_web_page_preview=False, **kwargs)
-                                except TypeError:
-                                    from pyrogram.types import LinkPreviewOptions
-                                    await app.send_message(chat_id, content.text.html, link_preview_options=LinkPreviewOptions(is_disabled=False), **kwargs)
-                            else:
-                                await content.copy(chat_id, reply_markup=content.reply_markup)
-                        else:
-                            try:
-                                await app.send_message(chat_id, text_payload, disable_web_page_preview=False, parse_mode=ParseMode.HTML)
-                            except TypeError:
-                                from pyrogram.types import LinkPreviewOptions
-                                await app.send_message(chat_id, text_payload, link_preview_options=LinkPreviewOptions(is_disabled=False), parse_mode=ParseMode.HTML)
-                                
                         if str(chat_id).startswith("-"):
                             sent_chats += 1
                         else:
                             sent_users += 1
-                    except Exception:
+                            
+                        await asyncio.sleep(0.1)
+                    break
+
+                except FloodWait as e:
+                    if e.value > 60:
+                        failed_count += 1
+                        break
+                    LOG.warning(f"FloodWait {e.value}s in chat {chat_id}")
+                    await asyncio.sleep(e.value)
+
+                except (InputUserDeactivated, UserIsBlocked, PeerIdInvalid):
+                    FAILED_IDS.add(chat_id) 
+                    failed_count += 1
+                    break
+
+                except (OSError, ConnectionError, TimeoutError):
+                    if attempt < 2:
+                        LOG.warning(f"Connection error delivering to {chat_id}, retry {attempt + 1}/3")
+                        await asyncio.sleep(2 ** attempt)
+                    else:
+                        LOG.error(f"Delivery failed after 3 attempts for chat {chat_id}")
                         failed_count += 1
 
-            except (InputUserDeactivated, UserIsBlocked, PeerIdInvalid):
-                FAILED_IDS.add(chat_id) 
-                failed_count += 1
-            except Exception:
-                failed_count += 1
+                except Exception:
+                    failed_count += 1
+                    break
 
         i = 0
         while i < len(remaining_targets):
