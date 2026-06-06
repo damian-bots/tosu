@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 import json
+import logging
 from typing import Union, Dict, Optional
 from urllib.parse import urlparse, unquote, quote
 
@@ -17,21 +18,17 @@ from AnonXMusic.utils.database import get_search_cache, set_search_cache
 from AnonXMusic.utils.formatters import time_to_seconds
 
 import config
-from AnonXMusic import app as TG_APP
-from AnonXMusic import LOGGER as LOG
 
 MEDIA_DB_NAME = "arcapi"
 MEDIA_COLLECTION_NAME = "medias"
 
 DOWNLOAD_DIR = "downloads"
-LOGGER = LOG(__name__)
+logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 1024 * 1024
 SEARCH_RETRIES = 4
 JOB_POLL_ATTEMPTS = 10
 JOB_POLL_INTERVAL = 3.0
-CDN_RETRIES = 5
-CDN_RETRY_DELAY = 2
 
 HARD_TIMEOUT = 80
 PROCESS_TIMEOUT = 80
@@ -40,9 +37,10 @@ _session: Optional[aiohttp.ClientSession] = None
 _session_lock = asyncio.Lock()
 _MONGO_CLIENT: Optional[AsyncIOMotorClient] = None
 
-# In-memory download caches
-_dl_cache: Dict[str, str] = {}
-_v_cache: Dict[str, str] = {}
+
+def _get_app():
+    from AnonXMusic import app
+    return app
 
 
 async def get_http_session() -> aiohttp.ClientSession:
@@ -72,197 +70,9 @@ def _ensure_dir(p: str) -> None:
     os.makedirs(p, exist_ok=True)
 
 
-# ── Database cache (Telegram channel) ──────────────────────────────
-
-
-async def _fetch_media_msg_id(track_id: str, is_video: bool) -> Optional[int]:
-    col = _get_media_collection()
-    if col is None:
-        return None
-    fname = f"{track_id}.mp4" if is_video else f"{track_id}.mp3"
-    try:
-        doc = await col.find_one({"track_id": fname, "isVideo": is_video})
-        if doc and doc.get("message_id"):
-            return int(doc["message_id"])
-    except Exception:
-        pass
-    return None
-
-
-async def _download_from_db(video_id: str, is_video: bool) -> Optional[str]:
-    ch_id = getattr(config, "MEDIA_CHANNEL_ID", None)
-    if not ch_id or TG_APP is None:
-        return None
-    try:
-        ch_id = int(ch_id)
-    except (ValueError, TypeError):
-        return None
-
-    msg_id = await _fetch_media_msg_id(video_id, is_video)
-    if not msg_id:
-        return None
-
-    try:
-        from pyrogram.errors import FloodWait
-        try:
-            msg = await TG_APP.get_messages(ch_id, msg_id)
-        except FloodWait:
-            return None
-        if not msg:
-            return None
-        dl_path = await asyncio.wait_for(
-            TG_APP.download_media(msg),
-            timeout=HARD_TIMEOUT,
-        )
-        if dl_path and os.path.exists(dl_path):
-            LOGGER.info(f"DB-CACHE hit for {video_id}")
-            return dl_path
-    except Exception as e:
-        LOGGER.error(f"DB download failed for {video_id}: {e}")
-    return None
-
-
-# ── API download (ArcAPI) ──────────────────────────────────────────
-
-
-async def _api_create_job(video_id: str, is_video: bool) -> Optional[str]:
-    api_url = getattr(config, "API_URL", None)
-    api_key = getattr(config, "API_KEY", None)
-    if not api_url or not api_key:
-        return None
-
-    endpoint = f"{api_url.rstrip('/')}/youtube/v2/download"
-    params = {
-        "api_key": api_key,
-        "query": video_id,
-        "isVideo": str(is_video).lower(),
-    }
-
-    session = await get_http_session()
-    for _ in range(3):
-        try:
-            async with session.get(endpoint, params=params) as resp:
-                if resp.status != 200:
-                    await asyncio.sleep(1)
-                    continue
-                data = await resp.json()
-                if data.get("status") != "queued":
-                    await asyncio.sleep(1)
-                    continue
-                job_id = data.get("job_id")
-                if not job_id:
-                    await asyncio.sleep(1)
-                    continue
-                return job_id
-        except Exception:
-            await asyncio.sleep(1)
-    return None
-
-
-async def _api_poll_job(job_id: str) -> Optional[str]:
-    api_url = getattr(config, "API_URL", None)
-    if not api_url:
-        return None
-
-    endpoint = f"{api_url.rstrip('/')}/youtube/jobStatus"
-    params = {"job_id": job_id}
-
-    session = await get_http_session()
-    for attempt in range(1, JOB_POLL_ATTEMPTS + 1):
-        try:
-            async with session.get(endpoint, params=params) as resp:
-                if resp.status != 200:
-                    await asyncio.sleep(JOB_POLL_INTERVAL)
-                    continue
-                data = await resp.json()
-                if data.get("status") != "success":
-                    await asyncio.sleep(JOB_POLL_INTERVAL)
-                    continue
-                job = data.get("job", {})
-                if job.get("status") != "done":
-                    await asyncio.sleep(JOB_POLL_INTERVAL)
-                    continue
-                public_url = job.get("result", {}).get("public_url")
-                if not public_url:
-                    break
-                LOGGER.info(f"ArcApi: Received #{attempt} [{api_url + public_url}]")
-                return api_url.rstrip("/") + public_url
-        except Exception:
-            pass
-        await asyncio.sleep(JOB_POLL_INTERVAL)
-    return None
-
-
-async def _api_save_file(url: str) -> Optional[str]:
-    fpath = os.path.join(DOWNLOAD_DIR, url.split("/")[-1])
-    _ensure_dir(DOWNLOAD_DIR)
-    try:
-        session = await get_http_session()
-        async with session.get(url, timeout=None) as resp:
-            if resp.status != 200:
-                return None
-            async with aiofiles.open(fpath, "wb") as f:
-                async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
-                    if chunk:
-                        await f.write(chunk)
-        return fpath
-    except Exception as e:
-        LOGGER.error(f"Failed to save file from API: {e}")
-    return None
-
-
-async def _api_download(video_id: str, is_video: bool) -> Optional[str]:
-    for attempt in range(2):
-        job_id = await _api_create_job(video_id, is_video)
-        if not job_id:
-            if attempt == 0:
-                await asyncio.sleep(2)
-            continue
-
-        dl_url = await _api_poll_job(job_id)
-        if not dl_url:
-            if attempt == 0:
-                await asyncio.sleep(2)
-            continue
-
-        fpath = await _api_save_file(dl_url)
-        if not fpath:
-            if attempt == 0:
-                await asyncio.sleep(2)
-            continue
-
-        return fpath
-    return None
-
-
-# ── Combined download (DB first, then API) ─────────────────────────
-
-
-async def _full_download(video_id: str, is_video: bool) -> Optional[str]:
-    if is_video and video_id in _v_cache:
-        return _v_cache[video_id]
-    if not is_video and video_id in _dl_cache:
-        return _dl_cache[video_id]
-
-    fpath = await _download_from_db(video_id, is_video)
-    if not fpath:
-        fpath = await _api_download(video_id, is_video)
-    if not fpath:
-        return None
-
-    if is_video:
-        _v_cache[video_id] = fpath
-    else:
-        _dl_cache[video_id] = fpath
-    return fpath
-
-
-# ── URL / ID helpers ───────────────────────────────────────────────
-
-
 def is_safe_url(text: str) -> bool:
     DANGEROUS_CHARS = [
-        ";", "|", "$", "`", "\n", "\r", "(",  ")",
+        ";", "|", "$", "`", "\n", "\r", "(", ")",
         "<", ">", "{", "}", "\\", "'", '"',
     ]
     ALLOWED_DOMAINS = {
@@ -280,7 +90,7 @@ def is_safe_url(text: str) -> bool:
         try:
             decoded = unquote(text).lower()
             if any(c in decoded for c in CRITICAL_SHELL):
-                LOGGER.warning(f"BLOCKED MALICIOUS TEXT QUERY: {text}")
+                logger.warning(f"BLOCKED MALICIOUS TEXT QUERY: {text}")
                 return False
         except Exception:
             return False
@@ -293,18 +103,18 @@ def is_safe_url(text: str) -> bool:
 
         decoded_url = unquote(target_url)
         if any(char in decoded_url for char in DANGEROUS_CHARS):
-            LOGGER.warning(f"BLOCKED MALICIOUS INJECTION: {text}")
+            logger.warning(f"BLOCKED MALICIOUS INJECTION: {text}")
             return False
 
         parsed = urlparse(target_url)
         domain = parsed.netloc.replace("www.", "")
         if domain not in ALLOWED_DOMAINS:
-            LOGGER.warning(f"BLOCKED INVALID DOMAIN: {domain}")
+            logger.warning(f"BLOCKED INVALID DOMAIN: {domain}")
             return False
 
         return True
     except Exception as e:
-        LOGGER.error(f"URL Validation Error: {e}")
+        logger.error(f"URL Validation Error: {e}")
         return False
 
 
@@ -337,14 +147,191 @@ def extract_video_id(link: str) -> str:
     return ""
 
 
-# ── YouTubeAPI class ───────────────────────────────────────────────
-
-
 class YouTubeAPI:
     def __init__(self):
         self.base = "https://www.youtube.com/watch?v="
         self.listbase = "https://youtube.com/playlist?list="
         self.regex = YOUTUBE_REGEX
+        self.dl_cache: Dict[str, str] = {}
+        self.v_cache: Dict[str, str] = {}
+
+    # ── Database cache (Telegram channel) ──────────────────────────
+
+    async def _fetch_media_msg_id(self, track_id: str, is_video: bool) -> Optional[int]:
+        col = _get_media_collection()
+        if col is None:
+            return None
+        fname = f"{track_id}.mp4" if is_video else f"{track_id}.mp3"
+        try:
+            doc = await col.find_one({"track_id": fname, "isVideo": is_video})
+            if doc and doc.get("message_id"):
+                return int(doc["message_id"])
+        except Exception:
+            pass
+        return None
+
+    async def _download_from_db(self, video_id: str, is_video: bool) -> Optional[str]:
+        app = _get_app()
+        ch_id = getattr(config, "MEDIA_CHANNEL_ID", None)
+        if not ch_id or app is None:
+            return None
+        try:
+            ch_id = int(ch_id)
+        except (ValueError, TypeError):
+            return None
+
+        msg_id = await self._fetch_media_msg_id(video_id, is_video)
+        if not msg_id:
+            return None
+
+        try:
+            from pyrogram.errors import FloodWait
+            try:
+                msg = await app.get_messages(ch_id, msg_id)
+            except FloodWait:
+                return None
+            if not msg:
+                return None
+            dl_path = await asyncio.wait_for(
+                app.download_media(msg),
+                timeout=HARD_TIMEOUT,
+            )
+            if dl_path and os.path.exists(dl_path):
+                logger.info(f"DB-CACHE hit for {video_id}")
+                return dl_path
+        except Exception as e:
+            logger.error(f"DB download failed for {video_id}: {e}")
+        return None
+
+    # ── API download (ArcAPI) ──────────────────────────────────────
+
+    async def _api_create_job(self, video_id: str, is_video: bool) -> Optional[str]:
+        api_url = getattr(config, "API_URL", None)
+        api_key = getattr(config, "API_KEY", None)
+        if not api_url or not api_key:
+            return None
+
+        endpoint = f"{api_url.rstrip('/')}/youtube/v2/download"
+        params = {
+            "api_key": api_key,
+            "query": video_id,
+            "isVideo": str(is_video).lower(),
+        }
+
+        session = await get_http_session()
+        for _ in range(3):
+            try:
+                async with session.get(endpoint, params=params) as resp:
+                    if resp.status != 200:
+                        await asyncio.sleep(1)
+                        continue
+                    data = await resp.json()
+                    if data.get("status") != "queued":
+                        await asyncio.sleep(1)
+                        continue
+                    job_id = data.get("job_id")
+                    if not job_id:
+                        await asyncio.sleep(1)
+                        continue
+                    return job_id
+            except Exception:
+                await asyncio.sleep(1)
+        return None
+
+    async def _api_poll_job(self, job_id: str) -> Optional[str]:
+        api_url = getattr(config, "API_URL", None)
+        if not api_url:
+            return None
+
+        endpoint = f"{api_url.rstrip('/')}/youtube/jobStatus"
+        params = {"job_id": job_id}
+
+        session = await get_http_session()
+        for attempt in range(1, JOB_POLL_ATTEMPTS + 1):
+            try:
+                async with session.get(endpoint, params=params) as resp:
+                    if resp.status != 200:
+                        await asyncio.sleep(JOB_POLL_INTERVAL)
+                        continue
+                    data = await resp.json()
+                    if data.get("status") != "success":
+                        await asyncio.sleep(JOB_POLL_INTERVAL)
+                        continue
+                    job = data.get("job", {})
+                    if job.get("status") != "done":
+                        await asyncio.sleep(JOB_POLL_INTERVAL)
+                        continue
+                    public_url = job.get("result", {}).get("public_url")
+                    if not public_url:
+                        break
+                    logger.info(f"ArcApi: Received #{attempt} [{api_url + public_url}]")
+                    return api_url.rstrip("/") + public_url
+            except Exception:
+                pass
+            await asyncio.sleep(JOB_POLL_INTERVAL)
+        return None
+
+    async def _api_save_file(self, url: str) -> Optional[str]:
+        fpath = os.path.join(DOWNLOAD_DIR, url.split("/")[-1])
+        _ensure_dir(DOWNLOAD_DIR)
+        try:
+            session = await get_http_session()
+            async with session.get(url, timeout=None) as resp:
+                if resp.status != 200:
+                    return None
+                async with aiofiles.open(fpath, "wb") as f:
+                    async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
+                        if chunk:
+                            await f.write(chunk)
+            return fpath
+        except Exception as e:
+            logger.error(f"Failed to save file from API: {e}")
+        return None
+
+    async def _api_download(self, video_id: str, is_video: bool) -> Optional[str]:
+        for attempt in range(2):
+            job_id = await self._api_create_job(video_id, is_video)
+            if not job_id:
+                if attempt == 0:
+                    await asyncio.sleep(2)
+                continue
+
+            dl_url = await self._api_poll_job(job_id)
+            if not dl_url:
+                if attempt == 0:
+                    await asyncio.sleep(2)
+                continue
+
+            fpath = await self._api_save_file(dl_url)
+            if not fpath:
+                if attempt == 0:
+                    await asyncio.sleep(2)
+                continue
+
+            return fpath
+        return None
+
+    # ── Combined download (DB first, then API) ─────────────────────
+
+    async def _full_download(self, video_id: str, is_video: bool) -> Optional[str]:
+        if is_video and video_id in self.v_cache:
+            return self.v_cache[video_id]
+        if not is_video and video_id in self.dl_cache:
+            return self.dl_cache[video_id]
+
+        fpath = await self._download_from_db(video_id, is_video)
+        if not fpath:
+            fpath = await self._api_download(video_id, is_video)
+        if not fpath:
+            return None
+
+        if is_video:
+            self.v_cache[video_id] = fpath
+        else:
+            self.dl_cache[video_id] = fpath
+        return fpath
+
+    # ── Search methods ─────────────────────────────────────────────
 
     async def fast_search(self, query: str, fetch_all: bool = False) -> Union[Dict[str, str], list, None]:
         if not query:
@@ -432,7 +419,7 @@ class YouTubeAPI:
                                             "url": f"https://www.youtube.com/watch?v={vid}",
                                         })
             except Exception as e:
-                LOGGER.error(f"JSON Parsing failed: {e}")
+                logger.error(f"JSON Parsing failed: {e}")
 
             if not results_list:
                 video_ids = re.findall(r'"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"', html)
@@ -459,7 +446,7 @@ class YouTubeAPI:
             return best_result
 
         except Exception as e:
-            LOGGER.error(f"Fast Search Failed: {e}")
+            logger.error(f"Fast Search Failed: {e}")
             return None
 
     async def exists(self, link: str, videoid: Union[bool, str] = None) -> bool:
@@ -562,7 +549,7 @@ class YouTubeAPI:
                 if attempt < SEARCH_RETRIES - 1:
                     await asyncio.sleep(0.5)
 
-        LOGGER.error(f"Details extraction failed for {link} after {SEARCH_RETRIES} attempts: {last_error}")
+        logger.error(f"Details extraction failed for {link} after {SEARCH_RETRIES} attempts: {last_error}")
         raise Exception(f"Failed to fetch track details after {SEARCH_RETRIES} attempts: {last_error}")
 
     async def title(self, link: str, videoid: Union[bool, str] = None) -> str:
@@ -676,15 +663,15 @@ class YouTubeAPI:
 
         try:
             fpath = await asyncio.wait_for(
-                _full_download(vid, is_video=True),
+                self._full_download(vid, is_video=True),
                 timeout=PROCESS_TIMEOUT,
             )
             if fpath and os.path.exists(fpath):
                 return 1, fpath
         except asyncio.TimeoutError:
-            LOGGER.error(f"Video download timed out: {vid}")
+            logger.error(f"Video download timed out: {vid}")
         except Exception as e:
-            LOGGER.error(f"Video download failed: {e}")
+            logger.error(f"Video download failed: {e}")
         return 0, "Download failed"
 
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
@@ -705,7 +692,7 @@ class YouTubeAPI:
                 return []
             return [r.get("id", "") for r in res["result"] if r.get("id")]
         except Exception as e:
-            LOGGER.error(f"Playlist fetch failed: {e}")
+            logger.error(f"Playlist fetch failed: {e}")
             return []
 
     async def track(self, link: str, videoid: Union[bool, str] = None):
@@ -786,7 +773,7 @@ class YouTubeAPI:
                 if attempt < SEARCH_RETRIES - 1:
                     await asyncio.sleep(0.5)
 
-        LOGGER.error(f"Track extraction failed for {link} after {SEARCH_RETRIES} attempts: {last_error}")
+        logger.error(f"Track extraction failed for {link} after {SEARCH_RETRIES} attempts: {last_error}")
         raise Exception(f"Could not process track request after {SEARCH_RETRIES} attempts: {last_error}")
 
     async def slider(self, link: str, query_type: int, videoid: Union[bool, str] = None):
@@ -839,7 +826,7 @@ class YouTubeAPI:
                 if attempt < SEARCH_RETRIES - 1:
                     await asyncio.sleep(0.5)
 
-        LOGGER.error(f"Slider extraction failed for {link} after {SEARCH_RETRIES} attempts: {last_error}")
+        logger.error(f"Slider extraction failed for {link} after {SEARCH_RETRIES} attempts: {last_error}")
         raise Exception(f"Failed to load search options after {SEARCH_RETRIES} attempts: {last_error}")
 
     async def download(
@@ -876,7 +863,7 @@ class YouTubeAPI:
 
         try:
             fpath = await asyncio.wait_for(
-                _full_download(vid, is_video),
+                self._full_download(vid, is_video),
                 timeout=PROCESS_TIMEOUT,
             )
             if fpath and os.path.exists(fpath):
@@ -884,9 +871,9 @@ class YouTubeAPI:
                     return fpath
                 return fpath, True
         except asyncio.TimeoutError:
-            LOGGER.error(f"Download timed out: {link}")
+            logger.error(f"Download timed out: {link}")
         except Exception as e:
-            LOGGER.error(f"Download failed: {e}")
+            logger.error(f"Download failed: {e}")
 
         if songvideo or songaudio:
             return None
