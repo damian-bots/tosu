@@ -1,20 +1,3 @@
-"""
-AnonXMusic/platforms/Api.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Unified API-2 client for non-YouTube music platforms.
-
-Mirrors the logic from api.go / service.go in TgMusicBot:
-  - isValid()   → checks URL against per-platform regex patterns
-  - getInfo()   → /api/get_url   — playlist / album / artist metadata
-  - getTrack()  → /api/track     — single-track CDN info + decryption key
-  - search()    → /api/search    — plain-text search (5 results)
-  - download()  → wraps getTrack() then the Downloader (spotify_dl logic)
-
-Platforms supported (via API-2):
-  Apple Music, Spotify, JioSaavn, Deezer, SoundCloud,
-  Gaana, Tidal, MX Player, Twitch (VOD + clip), Kick (VOD + clip)
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -32,9 +15,6 @@ from AnonXMusic.utils.formatters import seconds_to_min
 
 LOGGER = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────────
-# URL patterns (ported 1-to-1 from api.go's apiPatterns map)
-# ──────────────────────────────────────────────────────────────
 _PATTERNS: dict[str, re.Pattern] = {
     "apple": re.compile(
         r"(?i)^https?:\/\/music\.apple\.com\/[a-zA-Z-]+"
@@ -267,9 +247,7 @@ async def _download_direct(cdn_url: str, track_id: str, ext: str = "mp3") -> Opt
     return out_path if ok else None
 
 
-# ──────────────────────────────────────────────────────────────
-# Main API-2 class
-# ──────────────────────────────────────────────────────────────
+
 class ApiPlatform:
     """
     Unified wrapper for all non-YouTube platforms via API-2.
@@ -369,7 +347,6 @@ class ApiPlatform:
         """
         return await self._get("/api/search", {"query": query, "limit": str(limit)})
 
-    # ── High-level helpers used by the bot ─────────────────────
     async def track(self, url: str) -> Optional[tuple[dict, str]]:
         """
         Returns (track_details_dict, track_id) like the old Spotify.track(),
@@ -415,55 +392,75 @@ class ApiPlatform:
         }
         return details, track_id
 
-    async def playlist(self, url: str) -> Optional[tuple[list[str], str]]:
-        """Returns (list_of_search_queries, playlist_id)."""
+    @staticmethod
+    @staticmethod
+    def _extract_music_tracks(data: dict) -> list[dict]:
+        """
+        Extract a list of MusicTrack dicts from a PlatformTracks API response.
+
+        Mirrors Go's PlatformTracks.Results []MusicTrack exactly:
+          MusicTrack { title, id, url, thumbnail, duration (int secs),
+                       channel, views, platform }
+
+        The API always returns the top-level key "results" for /api/get_url.
+        We also check "tracks" and "items" for compatibility with any
+        platform wrapper that uses a different key.
+        """
+        raw = (
+            data.get("results")
+            or data.get("tracks")
+            or data.get("items")
+            or []
+        )
+        tracks: list[dict] = []
+        for t in raw:
+            if not isinstance(t, dict):
+                continue
+            title = t.get("title") or t.get("name") or ""
+            if not title:
+                continue
+            tracks.append({
+                "title":     title,
+                "id":        t.get("id") or "",
+                "url":       t.get("url") or "",
+                "thumbnail": t.get("thumbnail") or "",
+                "duration":  int(t.get("duration") or 0),
+                "channel":   t.get("channel") or "",
+                "views":     t.get("views") or "",
+                "platform":  t.get("platform") or "",
+            })
+        return tracks
+
+    async def playlist(self, url: str) -> Optional[tuple[list[dict], str]]:
+        """
+        Returns (list_of_MusicTrack_dicts, playlist_id).
+
+        Each dict mirrors Go's MusicTrack:
+          { title, id, url, thumbnail, duration (int secs), channel, views, platform }
+
+        Callers (stream.py playlist handler) should use track["url"] directly
+        for API-2 platforms and fall back to YouTube search using track["title"]
+        only when track["url"] is empty.
+        """
         data = await self.get_info(url)
         if not data:
             return None
-        tracks = data.get("tracks") or data.get("items") or []
-        results: list[str] = []
-        for t in tracks:
-            name = t.get("title") or t.get("name") or ""
-            artists = t.get("artists") or []
-            if isinstance(artists, list):
-                artist_str = " ".join(
-                    a.get("name", "") if isinstance(a, dict) else str(a)
-                    for a in artists
-                )
-            else:
-                artist_str = str(artists)
-            query = f"{name} {artist_str}".strip()
-            if query:
-                results.append(query)
+        tracks = self._extract_music_tracks(data)
         plist_id = data.get("id") or data.get("playlist_id") or url
-        return results, plist_id
+        return tracks, plist_id
 
-    async def album(self, url: str) -> Optional[tuple[list[str], str]]:
+    async def album(self, url: str) -> Optional[tuple[list[dict], str]]:
         """Same shape as playlist() — reuses get_info."""
         return await self.playlist(url)
 
-    async def artist(self, url: str) -> Optional[tuple[list[str], str]]:
+    async def artist(self, url: str) -> Optional[tuple[list[dict], str]]:
         """Top tracks for an artist page."""
         data = await self.get_info(url)
         if not data:
             return None
-        tracks = data.get("tracks") or data.get("items") or []
-        results = []
-        for t in tracks:
-            name = t.get("title") or t.get("name") or ""
-            artists = t.get("artists") or []
-            if isinstance(artists, list):
-                artist_str = " ".join(
-                    a.get("name", "") if isinstance(a, dict) else str(a)
-                    for a in artists
-                )
-            else:
-                artist_str = str(artists)
-            query = f"{name} {artist_str}".strip()
-            if query:
-                results.append(query)
+        tracks = self._extract_music_tracks(data)
         artist_id = data.get("id") or data.get("artist_id") or url
-        return results, artist_id
+        return tracks, artist_id
 
     # ── Download ───────────────────────────────────────────────
     async def download(self, url: str, video: bool = False) -> Optional[str]:
@@ -498,9 +495,6 @@ class ApiPlatform:
             LOGGER.info(f"API-2: Spotify encrypted download for {track_id}")
             return await _download_spotify_track(cdn_url, hex_key, track_id)
 
-        # For live/stream platforms (Twitch, Kick, MX Player) the CDN URL
-        # is often a playable HLS stream — return it directly so ntgcalls
-        # can play it without downloading (same as processDirectDL in Go).
         stream_platforms = {"twitch", "twitchclip", "kick", "kickclip", "mxplayer"}
         if platform in stream_platforms:
             LOGGER.info(f"API-2: stream URL passthrough for {platform}")
