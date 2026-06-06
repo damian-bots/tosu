@@ -71,10 +71,12 @@ async def stream(
                 if duration_sec > config.DURATION_LIMIT:
                     continue
 
-                # For non-YouTube platforms the API already provides a playable
+                # For non-YouTube platforms the API already provides a
                 # URL — queue it directly without a YouTube re-search.
+                # Note: Spotify CDN URLs are AES-CTR encrypted; they are
+                # decrypted in the unified block below before queuing/playing.
                 if direct_url and platform and platform.lower() not in ("youtube", ""):
-                    file_ref = direct_url   # direct CDN / stream URL
+                    file_ref = direct_url   # raw URL; decrypted below if Spotify
                     thumb    = thumbnail
                 else:
                     # YouTube track — use vid_ prefix so the queue knows to
@@ -101,6 +103,25 @@ async def stream(
                     continue
                 file_ref  = f"vid_{vidid}"
                 thumbnail = thumb
+
+            # ── Resolve file_ref for Spotify encrypted tracks ─────────────────
+            # Spotify CDN URLs are AES-CTR encrypted; they must be downloaded
+            # and decrypted before being passed to ntgcalls/ffmpeg — both for
+            # the "start now" path and for queued entries.
+            # file_ref may already be a local path (set above in the API-2 block)
+            # if we already decrypted it; only hit the download for raw CDN URLs.
+            if (
+                not file_ref.startswith("vid_")
+                and file_ref.startswith("http")
+                and isinstance(track, dict)
+                and (track.get("platform") or "").lower() == "spotify"
+            ):
+                try:
+                    decrypted = await Spotify.download(file_ref)
+                    if decrypted:
+                        file_ref = decrypted
+                except Exception:
+                    pass  # best-effort; ffmpeg will fail and skip gracefully
 
             # ── Queue or start ────────────────────────────────────────────────
             if await is_active_chat(chat_id):
@@ -131,7 +152,8 @@ async def stream(
                             yt_id, mystic, video=status, videoid=True
                         )
                     else:
-                        # API-2 direct URL — no download needed; ntgcalls streams it
+                        # Local file (already downloaded/decrypted) or non-Spotify
+                        # CDN URL — ntgcalls can stream it directly.
                         file_path = file_ref
                         direct    = True
                 except Exception:
