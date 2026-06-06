@@ -43,7 +43,7 @@ async def stream(
         count = 0
         for track in result:
             if int(count) == config.PLAYLIST_FETCH_LIMIT:
-                continue
+                break
 
             # ── Determine track metadata ──────────────────────────────────────
             # Go's handleMultipleTracks works directly with MusicTrack dicts from
