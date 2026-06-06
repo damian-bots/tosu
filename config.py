@@ -28,6 +28,12 @@ MEDIA_CHANNEL_ID = int(getenv("MEDIA_CHANNEL_ID"))
 API_URL = getenv("API_URL", "https://api.arcmusic.fun")
 API_KEY = getenv("API_KEY")
 
+# API-2: Used for Spotify, Apple Music, Deezer, SoundCloud, Gaana, Tidal,
+#         MX Player, Twitch, Kick and all other non-YouTube platforms.
+#         Get your credentials from the same provider as API_KEY.
+API_URL2 = getenv("API_URL2", "")
+API_KEY2 = getenv("API_KEY2", "")
+
 # Get this value from @FallenxBot on Telegram by /id
 OWNER_ID = 603536072
 
@@ -60,6 +66,30 @@ SPOTIFY_CLIENT_SECRET = getenv("SPOTIFY_CLIENT_SECRET", "2607415f99944cc6b24fa98
 
 # Maximum limit for fetching playlist's track from youtube, spotify, apple links.
 PLAYLIST_FETCH_LIMIT = int(getenv("PLAYLIST_FETCH_LIMIT", 50))
+
+
+# ── Platform Toggles ──────────────────────────────────────────────────────────
+# Set to "false" (case-insensitive) to disable a platform.
+# Users will see a "temporarily disabled" message with a support link.
+def _bool(key: str, default: bool = True) -> bool:
+    val = getenv(key, "").strip().lower()
+    if val == "false":
+        return False
+    if val == "true":
+        return True
+    return default
+
+ENABLE_YOUTUBE    = _bool("ENABLE_YOUTUBE",    True)
+ENABLE_SPOTIFY    = _bool("ENABLE_SPOTIFY",    True)
+ENABLE_APPLE      = _bool("ENABLE_APPLE",      True)
+ENABLE_SOUNDCLOUD = _bool("ENABLE_SOUNDCLOUD", True)
+ENABLE_DEEZER     = _bool("ENABLE_DEEZER",     True)
+ENABLE_GAANA      = _bool("ENABLE_GAANA",      True)
+ENABLE_TIDAL      = _bool("ENABLE_TIDAL",      True)
+ENABLE_JIOSAAVN   = _bool("ENABLE_JIOSAAVN",   True)
+ENABLE_TWITCH     = _bool("ENABLE_TWITCH",     True)
+ENABLE_KICK       = _bool("ENABLE_KICK",       True)
+ENABLE_MXPLAYER   = _bool("ENABLE_MXPLAYER",   True)
 
 
 # Telegram audio and video file size limit (in bytes)
@@ -100,6 +130,14 @@ YOUTUBE_IMG_URL = "https://files.catbox.moe/viv1hy.jpg"
 SPOTIFY_ARTIST_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
 SPOTIFY_ALBUM_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
 SPOTIFY_PLAYLIST_IMG_URL = "https://files.catbox.moe/viv1hy.jpg"
+APPLE_IMG_URL = getenv("APPLE_IMG_URL", "https://i.imgur.com/WwdKBdK.jpg")
+DEEZER_IMG_URL = getenv("DEEZER_IMG_URL", "https://i.imgur.com/3YKSmFg.jpg")
+TIDAL_IMG_URL = getenv("TIDAL_IMG_URL", "https://i.imgur.com/1nqObLk.jpg")
+GAANA_IMG_URL = getenv("GAANA_IMG_URL", "https://i.imgur.com/Z7DKHTG.jpg")
+JIOSAAVN_IMG_URL = getenv("JIOSAAVN_IMG_URL", "https://i.imgur.com/wTJ3GRt.jpg")
+TWITCH_IMG_URL = getenv("TWITCH_IMG_URL", "https://i.imgur.com/Qn1fBaJ.jpg")
+KICK_IMG_URL = getenv("KICK_IMG_URL", "https://i.imgur.com/8Vu5YWv.jpg")
+MXPLAYER_IMG_URL = getenv("MXPLAYER_IMG_URL", "https://i.imgur.com/5b3Q2sX.jpg")
 
 
 def time_to_seconds(time):

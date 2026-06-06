@@ -7,7 +7,10 @@ from pyrogram.types import InlineKeyboardMarkup, InputMediaPhoto, Message
 from pytgcalls.exceptions import NoActiveGroupCall
 
 import config
-from AnonXMusic import Apple, Resso, SoundCloud, Spotify, Telegram, YouTube, app
+from AnonXMusic import (
+    Apple, Deezer, Gaana, JioSaavn, Kick, MXPlayer,
+    Resso, SoundCloud, Spotify, Telegram, Tidal, Twitch, YouTube, app,
+)
 from AnonXMusic.core.call import Anony
 from AnonXMusic.utils import seconds_to_min, time_to_seconds
 from AnonXMusic.utils.channelplay import get_channeplayCB
@@ -161,6 +164,8 @@ async def play_commnd(
         
     elif url:
         if await YouTube.exists(url):
+            if not config.ENABLE_YOUTUBE:
+                return await mystic.edit_text(_["play_disabled"].format("YouTube"))
             if "playlist" in url:
                 try:
                     details = await YouTube.playlist(
@@ -189,8 +194,10 @@ async def play_commnd(
                     details["title"],
                     details["duration_min"],
                 )
-                
+
         elif await Spotify.valid(url):
+            if not config.ENABLE_SPOTIFY:
+                return await mystic.edit_text(_["play_disabled"].format("Spotify"))
             spotify = True
             if not config.SPOTIFY_CLIENT_ID and not config.SPOTIFY_CLIENT_SECRET:
                 return await mystic.edit_text(
@@ -199,10 +206,18 @@ async def play_commnd(
             if "track" in url:
                 try:
                     details, track_id = await Spotify.track(url)
-                except:
+                except Exception:
                     return await mystic.edit_text(_["play_3"])
-                streamtype = "youtube"
-                img = details["thumb"]
+                try:
+                    sp_file = await Spotify.download(url)
+                    if sp_file:
+                        details["file_path"] = sp_file
+                        streamtype = "spotify"
+                    else:
+                        streamtype = "youtube"
+                except Exception:
+                    streamtype = "youtube"
+                img = details.get("thumb") or config.SPOTIFY_PLAYLIST_IMG_URL
                 cap = _["play_10"].format(details["title"], details["duration_min"])
             elif "playlist" in url:
                 try:
@@ -233,23 +248,262 @@ async def play_commnd(
                 cap = _["play_11"].format(message.from_user.first_name)
             else:
                 return await mystic.edit_text(_["play_15"])
-                
+
         elif await Apple.valid(url):
-            return await mystic.edit_text("❌ <b>Platform Not Supported</b>\n\nApple Music is currently disabled.")
-            
+            if not config.ENABLE_APPLE:
+                return await mystic.edit_text(_["play_disabled"].format("Apple Music"))
+            if not config.API_URL2 or not config.API_KEY2:
+                return await mystic.edit_text(
+                    "❌ <b>Apple Music requires API_URL2 & API_KEY2.</b>\n\nPlease configure them in your environment."
+                )
+            if "playlist" in url:
+                try:
+                    details, plist_id = await Apple.playlist(url)
+                except Exception:
+                    return await mystic.edit_text(_["play_3"])
+                streamtype = "playlist"
+                plist_type = "appleplay"
+                img = config.APPLE_IMG_URL
+                cap = _["play_11"].format(app.mention, message.from_user.mention)
+            elif "album" in url:
+                try:
+                    details, plist_id = await Apple.album(url)
+                except Exception:
+                    return await mystic.edit_text(_["play_3"])
+                streamtype = "playlist"
+                plist_type = "applealbum"
+                img = config.APPLE_IMG_URL
+                cap = _["play_11"].format(app.mention, message.from_user.mention)
+            else:
+                try:
+                    details, track_id = await Apple.track(url)
+                except Exception:
+                    return await mystic.edit_text(_["play_3"])
+                streamtype = "apple"
+                img = details.get("thumb") or config.APPLE_IMG_URL
+                cap = _["play_10"].format(details["title"], details["duration_min"])
+                try:
+                    file_path = await Apple.download(url)
+                    if not file_path:
+                        return await mystic.edit_text(_["play_dl_failed"].format("Apple Music"))
+                    details["file_path"] = file_path
+                except Exception:
+                    return await mystic.edit_text(_["play_dl_failed"].format("Apple Music"))
+
         elif await Resso.valid(url):
-            return await mystic.edit_text("❌ <b>Platform Not Supported</b>\n\nResso is currently disabled.")
-            
+            return await mystic.edit_text("❌ <b>Resso is no longer supported.</b>")
+
         elif await SoundCloud.valid(url):
-            return await mystic.edit_text("❌ <b>Platform Not Supported</b>\n\nSoundCloud is currently disabled.")
-            
+            if not config.ENABLE_SOUNDCLOUD:
+                return await mystic.edit_text(_["play_disabled"].format("SoundCloud"))
+            if not config.API_URL2 or not config.API_KEY2:
+                return await mystic.edit_text(
+                    "❌ <b>SoundCloud requires API_URL2 & API_KEY2.</b>\n\nPlease configure them."
+                )
+            try:
+                result = await SoundCloud.track(url)
+                if result:
+                    details, track_id = result
+                else:
+                    return await mystic.edit_text(_["play_3"])
+            except Exception:
+                return await mystic.edit_text(_["play_3"])
+            streamtype = "soundcloud_api"
+            img = details.get("thumb") or config.SOUNCLOUD_IMG_URL
+            cap = _["play_10"].format(details["title"], details["duration_min"])
+            try:
+                file_path = await SoundCloud.download(url)
+                if not file_path:
+                    return await mystic.edit_text(_["play_dl_failed"].format("SoundCloud"))
+                details["file_path"] = file_path
+            except Exception:
+                return await mystic.edit_text(_["play_dl_failed"].format("SoundCloud"))
+
+        elif await Deezer.valid(url):
+            if not config.ENABLE_DEEZER:
+                return await mystic.edit_text(_["play_disabled"].format("Deezer"))
+            if not config.API_URL2 or not config.API_KEY2:
+                return await mystic.edit_text("❌ Deezer requires API_URL2 & API_KEY2.")
+            if "track" in url:
+                try:
+                    details, track_id = await Deezer.track(url)
+                except Exception:
+                    return await mystic.edit_text(_["play_3"])
+                streamtype = "deezer"
+                img = details.get("thumb") or config.DEEZER_IMG_URL
+                cap = _["play_10"].format(details["title"], details["duration_min"])
+                try:
+                    file_path = await Deezer.download(url)
+                    if not file_path:
+                        return await mystic.edit_text(_["play_dl_failed"].format("Deezer"))
+                    details["file_path"] = file_path
+                except Exception:
+                    return await mystic.edit_text(_["play_dl_failed"].format("Deezer"))
+            else:
+                try:
+                    details, plist_id = await Deezer.playlist(url)
+                except Exception:
+                    return await mystic.edit_text(_["play_3"])
+                streamtype = "playlist"
+                plist_type = "deezerplay"
+                img = config.DEEZER_IMG_URL
+                cap = _["play_11"].format(app.mention, message.from_user.mention)
+
+        elif await Gaana.valid(url):
+            if not config.ENABLE_GAANA:
+                return await mystic.edit_text(_["play_disabled"].format("Gaana"))
+            if not config.API_URL2 or not config.API_KEY2:
+                return await mystic.edit_text("❌ Gaana requires API_URL2 & API_KEY2.")
+            try:
+                result = await Gaana.track(url)
+                if result:
+                    details, track_id = result
+                else:
+                    return await mystic.edit_text(_["play_3"])
+            except Exception:
+                return await mystic.edit_text(_["play_3"])
+            streamtype = "gaana"
+            img = details.get("thumb") or config.GAANA_IMG_URL
+            cap = _["play_10"].format(details["title"], details["duration_min"])
+            try:
+                file_path = await Gaana.download(url)
+                if not file_path:
+                    return await mystic.edit_text(_["play_dl_failed"].format("Gaana"))
+                details["file_path"] = file_path
+            except Exception:
+                return await mystic.edit_text(_["play_dl_failed"].format("Gaana"))
+
+        elif await Tidal.valid(url):
+            if not config.ENABLE_TIDAL:
+                return await mystic.edit_text(_["play_disabled"].format("Tidal"))
+            if not config.API_URL2 or not config.API_KEY2:
+                return await mystic.edit_text("❌ Tidal requires API_URL2 & API_KEY2.")
+            if "track" in url:
+                try:
+                    details, track_id = await Tidal.track(url)
+                except Exception:
+                    return await mystic.edit_text(_["play_3"])
+                streamtype = "tidal"
+                img = details.get("thumb") or config.TIDAL_IMG_URL
+                cap = _["play_10"].format(details["title"], details["duration_min"])
+                try:
+                    file_path = await Tidal.download(url)
+                    if not file_path:
+                        return await mystic.edit_text(_["play_dl_failed"].format("Tidal"))
+                    details["file_path"] = file_path
+                except Exception:
+                    return await mystic.edit_text(_["play_dl_failed"].format("Tidal"))
+            else:
+                try:
+                    details, plist_id = await Tidal.album(url) if "album" in url else await Tidal.playlist(url)
+                except Exception:
+                    return await mystic.edit_text(_["play_3"])
+                streamtype = "playlist"
+                plist_type = "tidalplay"
+                img = config.TIDAL_IMG_URL
+                cap = _["play_11"].format(app.mention, message.from_user.mention)
+
+        elif await JioSaavn.valid(url):
+            if not config.ENABLE_JIOSAAVN:
+                return await mystic.edit_text(_["play_disabled"].format("JioSaavn"))
+            if not config.API_URL2 or not config.API_KEY2:
+                return await mystic.edit_text("❌ JioSaavn requires API_URL2 & API_KEY2.")
+            if "song" in url:
+                try:
+                    details, track_id = await JioSaavn.track(url)
+                except Exception:
+                    return await mystic.edit_text(_["play_3"])
+                streamtype = "jiosaavn"
+                img = details.get("thumb") or config.JIOSAAVN_IMG_URL
+                cap = _["play_10"].format(details["title"], details["duration_min"])
+                try:
+                    file_path = await JioSaavn.download(url)
+                    if not file_path:
+                        return await mystic.edit_text(_["play_dl_failed"].format("JioSaavn"))
+                    details["file_path"] = file_path
+                except Exception:
+                    return await mystic.edit_text(_["play_dl_failed"].format("JioSaavn"))
+            else:
+                try:
+                    details, plist_id = await JioSaavn.playlist(url)
+                except Exception:
+                    return await mystic.edit_text(_["play_3"])
+                streamtype = "playlist"
+                plist_type = "jiosaavnplay"
+                img = config.JIOSAAVN_IMG_URL
+                cap = _["play_11"].format(app.mention, message.from_user.mention)
+
+        elif await Twitch.valid(url):
+            if not config.ENABLE_TWITCH:
+                return await mystic.edit_text(_["play_disabled"].format("Twitch"))
+            if not config.API_URL2 or not config.API_KEY2:
+                return await mystic.edit_text("❌ Twitch requires API_URL2 & API_KEY2.")
+            try:
+                result = await Twitch.track(url)
+                if result:
+                    details, track_id = result
+                else:
+                    return await mystic.edit_text(_["play_3"])
+            except Exception:
+                return await mystic.edit_text(_["play_3"])
+            file_path = await Twitch.download(url, video=bool(video))
+            if not file_path:
+                return await mystic.edit_text(_["play_dl_failed"].format("Twitch"))
+            details["file_path"] = file_path
+            streamtype = "twitch"
+            img = details.get("thumb") or config.TWITCH_IMG_URL
+            cap = _["play_10"].format(details["title"], details["duration_min"])
+
+        elif await Kick.valid(url):
+            if not config.ENABLE_KICK:
+                return await mystic.edit_text(_["play_disabled"].format("Kick"))
+            if not config.API_URL2 or not config.API_KEY2:
+                return await mystic.edit_text("❌ Kick requires API_URL2 & API_KEY2.")
+            try:
+                result = await Kick.track(url)
+                if result:
+                    details, track_id = result
+                else:
+                    return await mystic.edit_text(_["play_3"])
+            except Exception:
+                return await mystic.edit_text(_["play_3"])
+            file_path = await Kick.download(url, video=bool(video))
+            if not file_path:
+                return await mystic.edit_text(_["play_dl_failed"].format("Kick"))
+            details["file_path"] = file_path
+            streamtype = "kick"
+            img = details.get("thumb") or config.KICK_IMG_URL
+            cap = _["play_10"].format(details["title"], details["duration_min"])
+
+        elif await MXPlayer.valid(url):
+            if not config.ENABLE_MXPLAYER:
+                return await mystic.edit_text(_["play_disabled"].format("MX Player"))
+            if not config.API_URL2 or not config.API_KEY2:
+                return await mystic.edit_text("❌ MX Player requires API_URL2 & API_KEY2.")
+            try:
+                result = await MXPlayer.track(url)
+                if result:
+                    details, track_id = result
+                else:
+                    return await mystic.edit_text(_["play_3"])
+            except Exception:
+                return await mystic.edit_text(_["play_3"])
+            file_path = await MXPlayer.download(url, video=bool(video))
+            if not file_path:
+                return await mystic.edit_text(_["play_dl_failed"].format("MX Player"))
+            details["file_path"] = file_path
+            streamtype = "mxplayer"
+            img = details.get("thumb") or config.MXPLAYER_IMG_URL
+            cap = _["play_10"].format(details["title"], details["duration_min"])
+
         else:
-            # THIS IS THE BLOCK THAT EXECUTED THE VIRUS. 
-            # Replaced with a hard restriction.
             return await mystic.edit_text(
-                "❌ <b>Link Type Not Supported</b>\n\nStreaming from <b>Raw Links & M3U8 URLs</b> is currently disabled for security reasons.\n\n✅ Please use <b>YouTube, Spotify, or Telegram files</b>."
+                "❌ <b>Link Type Not Supported</b>\n\n"
+                "Streaming from <b>Raw Links & M3U8 URLs</b> is currently disabled for security reasons.\n\n"
+                "✅ Please use <b>YouTube, Spotify, Apple Music, Deezer, Tidal, JioSaavn, "
+                "SoundCloud, Gaana, Twitch, Kick, MX Player, or Telegram files</b>."
             )
-            
+
     else:
         if len(message.command) < 2:
             buttons = botplaylist_markup(_)
@@ -493,26 +747,61 @@ async def play_playlists_command(client, CallbackQuery, _):
             )
         except:
             return await mystic.edit_text(_["play_3"])
-    if ptype == "spplay":
+    elif ptype == "spplay":
         try:
             result, spotify_id = await Spotify.playlist(videoid)
         except:
             return await mystic.edit_text(_["play_3"])
-    if ptype == "spalbum":
+    elif ptype == "spalbum":
         try:
             result, spotify_id = await Spotify.album(videoid)
         except:
             return await mystic.edit_text(_["play_3"])
-    if ptype == "spartist":
+    elif ptype == "spartist":
         try:
             result, spotify_id = await Spotify.artist(videoid)
         except:
             return await mystic.edit_text(_["play_3"])
-    if ptype == "apple":
+    elif ptype in ("apple", "appleplay", "applealbum"):
         try:
-            result, apple_id = await Apple.playlist(videoid, True)
+            if ptype == "applealbum":
+                result, _ = await Apple.album(videoid)
+            else:
+                result, _ = await Apple.playlist(videoid, True)
         except:
             return await mystic.edit_text(_["play_3"])
+    elif ptype in ("deezerplay", "deezeralbum"):
+        if not config.API_URL2 or not config.API_KEY2:
+            return await mystic.edit_text("❌ Deezer requires API_URL2 & API_KEY2.")
+        try:
+            if ptype == "deezeralbum":
+                result, _ = await Deezer.album(videoid)
+            else:
+                result, _ = await Deezer.playlist(videoid)
+        except:
+            return await mystic.edit_text(_["play_3"])
+        spotify = False
+    elif ptype in ("tidalplay", "tidalalbum"):
+        if not config.API_URL2 or not config.API_KEY2:
+            return await mystic.edit_text("❌ Tidal requires API_URL2 & API_KEY2.")
+        try:
+            if ptype == "tidalalbum":
+                result, _ = await Tidal.album(videoid)
+            else:
+                result, _ = await Tidal.playlist(videoid)
+        except:
+            return await mystic.edit_text(_["play_3"])
+        spotify = False
+    elif ptype == "jiosaavnplay":
+        if not config.API_URL2 or not config.API_KEY2:
+            return await mystic.edit_text("❌ JioSaavn requires API_URL2 & API_KEY2.")
+        try:
+            result, _ = await JioSaavn.playlist(videoid)
+        except:
+            return await mystic.edit_text(_["play_3"])
+        spotify = False
+    else:
+        return await mystic.edit_text(_["play_3"])
     try:
         await stream(
             _,

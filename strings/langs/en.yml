@@ -157,6 +157,16 @@ play_19 : "Queued Playlist :"
 play_20 : "Queued Position-"
 play_21 : "ᴀᴅᴅᴇᴅ {0} ᴛʀᴀᴄᴋs ᴛᴏ ǫᴜᴇᴜᴇ.\n\n<b>ᴄʜᴇᴄᴋ :</b> <a href={1}>ᴄʟɪᴄᴋ ʜᴇʀᴇ</a>"
 play_22 : "sᴇʟᴇᴄᴛ ᴛʜᴇ ᴍᴏᴅᴇ ɪɴ ᴡʜɪᴄʜ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ᴘʟᴀʏ ᴛʜᴇ ǫᴜᴇʀɪᴇs ɪɴsɪᴅᴇ ʏᴏᴜʀ ɢʀᴏᴜᴘ : {0}"
+play_disabled : "❌ <b>{0} is Temporarily Disabled</b>
+
+This platform has been turned off by the owner.
+
+<b>Contact Support :</b> <a href=\"https://t.me/ArcChatz\">Support Chat</a>"
+play_dl_failed : "❌ <b>Download Failed</b>
+
+Failed to download the track from <b>{0}</b>.
+
+<b>Contact Support :</b> <a href=\"https://t.me/ArcChatz\">Support Chat</a>"
 
 str_1 : "ᴘʟᴇᴀsᴇ ᴘʀᴏᴠɪᴅᴇ ᴍ3ᴜ8 ᴏʀ ɪɴᴅᴇx ʟɪɴᴋs."
 str_2 : "➻ ᴠᴀʟɪᴅ sᴛʀᴇᴀᴍ ᴠᴇʀɪғɪᴇᴅ.\n\nᴘʀᴏᴄᴇssɪɴɢ..."

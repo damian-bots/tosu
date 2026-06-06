@@ -18,6 +18,25 @@ from pytgcalls.types.stream import StreamAudioEnded
 
 import config
 from AnonXMusic import LOGGER, YouTube, app
+
+
+async def _safe_tg_call(coro_fn, *args, retries: int = 4, base_delay: float = 3.0, **kwargs):
+    """Retry a Pyrogram coroutine on transient TCP connection errors."""
+    for attempt in range(1, retries + 1):
+        try:
+            return await coro_fn(*args, **kwargs)
+        except (OSError, ConnectionResetError, ConnectionError) as e:
+            if attempt < retries:
+                wait = base_delay * attempt
+                LOGGER(__name__).warning(
+                    f"[TG] Connection error attempt {attempt}/{retries}: {e}. Retry in {wait}s"
+                )
+                await asyncio.sleep(wait)
+            else:
+                LOGGER(__name__).error(f"[TG] Gave up after {retries} retries: {e}")
+                raise
+        except Exception:
+            raise
 from AnonXMusic.misc import db
 from AnonXMusic.utils.database import (
     add_active_chat,
@@ -369,7 +388,8 @@ class Call(PyTgCalls):
             if "live_" in queued:
                 n, link = await YouTube.video(videoid, True)
                 if n == 0:
-                    return await app.send_message(
+                    return await _safe_tg_call(
+                        app.send_message,
                         original_chat_id,
                         text=_["call_6"],
                     )
@@ -387,13 +407,15 @@ class Call(PyTgCalls):
                 try:
                     await client.change_stream(chat_id, stream)
                 except Exception:
-                    return await app.send_message(
+                    return await _safe_tg_call(
+                        app.send_message,
                         original_chat_id,
                         text=_["call_6"],
                     )
                 img = await get_thumb(videoid)
                 button = stream_markup(_, chat_id)
-                run = await app.send_photo(
+                run = await _safe_tg_call(
+                    app.send_photo,
                     chat_id=original_chat_id,
                     photo=img,
                     caption=_["stream_1"].format(
@@ -407,7 +429,7 @@ class Call(PyTgCalls):
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "tg"
             elif "vid_" in queued:
-                mystic = await app.send_message(original_chat_id, _["call_7"])
+                mystic = await _safe_tg_call(app.send_message, original_chat_id, _["call_7"])
                 try:
                     file_path, direct = await YouTube.download(
                         videoid,
@@ -433,14 +455,16 @@ class Call(PyTgCalls):
                 try:
                     await client.change_stream(chat_id, stream)
                 except:
-                    return await app.send_message(
+                    return await _safe_tg_call(
+                        app.send_message,
                         original_chat_id,
                         text=_["call_6"],
                     )
                 img = await get_thumb(videoid)
                 button = stream_markup(_, chat_id)
                 await mystic.delete()
-                run = await app.send_photo(
+                run = await _safe_tg_call(
+                    app.send_photo,
                     chat_id=original_chat_id,
                     photo=img,
                     caption=_["stream_1"].format(
@@ -466,12 +490,14 @@ class Call(PyTgCalls):
                 try:
                     await client.change_stream(chat_id, stream)
                 except:
-                    return await app.send_message(
+                    return await _safe_tg_call(
+                        app.send_message,
                         original_chat_id,
                         text=_["call_6"],
                     )
                 button = stream_markup(_, chat_id)
-                run = await app.send_photo(
+                run = await _safe_tg_call(
+                    app.send_photo,
                     chat_id=original_chat_id,
                     photo=config.STREAM_IMG_URL,
                     caption=_["stream_2"].format(user),
@@ -494,13 +520,15 @@ class Call(PyTgCalls):
                 try:
                     await client.change_stream(chat_id, stream)
                 except:
-                    return await app.send_message(
+                    return await _safe_tg_call(
+                        app.send_message,
                         original_chat_id,
                         text=_["call_6"],
                     )
                 if videoid == "telegram":
                     button = stream_markup(_, chat_id)
-                    run = await app.send_photo(
+                    run = await _safe_tg_call(
+                        app.send_photo,
                         chat_id=original_chat_id,
                         photo=config.TELEGRAM_AUDIO_URL
                         if str(streamtype) == "audio"
@@ -514,7 +542,8 @@ class Call(PyTgCalls):
                     db[chat_id][0]["markup"] = "tg"
                 elif videoid == "soundcloud":
                     button = stream_markup(_, chat_id)
-                    run = await app.send_photo(
+                    run = await _safe_tg_call(
+                        app.send_photo,
                         chat_id=original_chat_id,
                         photo=config.SOUNCLOUD_IMG_URL,
                         caption=_["stream_1"].format(
@@ -527,7 +556,8 @@ class Call(PyTgCalls):
                 else:
                     img = await get_thumb(videoid)
                     button = stream_markup(_, chat_id)
-                    run = await app.send_photo(
+                    run = await _safe_tg_call(
+                        app.send_photo,
                         chat_id=original_chat_id,
                         photo=img,
                         caption=_["stream_1"].format(
@@ -595,7 +625,30 @@ class Call(PyTgCalls):
         async def stream_end_handler1(client, update: Update):
             if not isinstance(update, StreamAudioEnded):
                 return
-            await self.change_stream(client, update.chat_id)
+            max_retries = 5
+            base_delay = 3
+            for attempt in range(1, max_retries + 1):
+                try:
+                    await self.change_stream(client, update.chat_id)
+                    break
+                except (OSError, ConnectionResetError, ConnectionError) as e:
+                    if attempt < max_retries:
+                        wait = base_delay * attempt
+                        LOGGER(__name__).warning(
+                            f"[stream_end] Connection error on attempt {attempt}/{max_retries} "
+                            f"for chat {update.chat_id}: {e}. Retrying in {wait}s..."
+                        )
+                        await asyncio.sleep(wait)
+                    else:
+                        LOGGER(__name__).error(
+                            f"[stream_end] Gave up after {max_retries} retries "
+                            f"for chat {update.chat_id}: {e}"
+                        )
+                except Exception as e:
+                    LOGGER(__name__).error(
+                        f"[stream_end] Unexpected error for chat {update.chat_id}: {e}"
+                    )
+                    break
 
 
 Anony = Call()

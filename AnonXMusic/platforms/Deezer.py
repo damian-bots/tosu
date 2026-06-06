@@ -1,0 +1,38 @@
+"""AnonXMusic/platforms/Deezer.py — Deezer via API-2."""
+import re, logging
+from typing import Optional
+import config
+LOGGER = logging.getLogger(__name__)
+
+_RE = re.compile(
+    r"(?i)https?:\/\/(?:www\.)?deezer\.com\/(?:[a-z]{2}\/)?(track|album|playlist)\/(\d+)"
+)
+
+class DeezerAPI:
+    async def valid(self, link: str) -> bool:
+        return bool(_RE.search(link)) if link else False
+
+    def _api(self):
+        from AnonXMusic.platforms.Api import ApiPlatform
+        return ApiPlatform()
+
+    def _ready(self) -> bool:
+        return bool(getattr(config, "API_URL2", "") and getattr(config, "API_KEY2", ""))
+
+    async def track(self, url: str):
+        if not self._ready(): return None
+        return await self._api().track(url)
+
+    async def playlist(self, url: str):
+        if not self._ready(): return [], url
+        result = await self._api().playlist(url)
+        return result if result else ([], url)
+
+    async def album(self, url: str):
+        if not self._ready(): return [], url
+        result = await self._api().album(url)
+        return result if result else ([], url)
+
+    async def download(self, url: str, video: bool = False) -> Optional[str]:
+        if not self._ready(): return None
+        return await self._api().download(url, video=video)

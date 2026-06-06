@@ -1,41 +1,66 @@
-import re
+"""
+AnonXMusic/platforms/Spotify.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Spotify platform handler — now powered by API-2 (API_URL2 / API_KEY2).
 
-import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials
-from youtubesearchpython.__future__ import VideosSearch
+Old behaviour:
+  Used spotipy + YouTube search as a two-step workaround.
+
+New behaviour (mirrors TgMusicBot api.go):
+  - Fetches real track / playlist / album / artist metadata via API-2
+  - Downloads the actual Spotify CDN audio with AES-CTR decryption
+  - Falls back to the existing YouTube.download() path on error
+    (so the bot keeps working even if API-2 is unavailable)
+"""
+
+import re
+import logging
+from typing import Optional
 
 import config
 
+LOGGER = logging.getLogger(__name__)
+
+_SPOTIFY_RE = re.compile(
+    r"(?i)^(https?://)?([a-z0-9-]+\.)*spotify\.com"
+    r"/(track|playlist|album|artist)/[a-zA-Z0-9]+(\?.*)?$"
+)
+
 
 class SpotifyAPI:
-    def __init__(self):
+    def __init__(self) -> None:
+        # Keep the old regex so callers using self.regex still work
         self.regex = r"^(https:\/\/open.spotify.com\/)(.*)$"
-        self.client_id = config.SPOTIFY_CLIENT_ID
-        self.client_secret = config.SPOTIFY_CLIENT_SECRET
-        if config.SPOTIFY_CLIENT_ID and config.SPOTIFY_CLIENT_SECRET:
-            self.client_credentials_manager = SpotifyClientCredentials(
-                self.client_id, self.client_secret
-            )
-            self.spotify = spotipy.Spotify(
-                client_credentials_manager=self.client_credentials_manager
-            )
-        else:
-            self.spotify = None
 
-    async def valid(self, link: str):
-        if re.search(self.regex, link):
-            return True
-        else:
-            return False
+    # ── validity ───────────────────────────────────────────────
+    async def valid(self, link: str) -> bool:
+        return bool(_SPOTIFY_RE.match(link.strip())) if link else False
 
+    def _api(self):
+        """Lazy import to avoid circular imports at module load time."""
+        from AnonXMusic.platforms.Api import ApiPlatform
+        return ApiPlatform()
+
+    # ── single track ───────────────────────────────────────────
     async def track(self, link: str):
-        track = self.spotify.track(link)
-        info = track["name"]
-        for artist in track["artists"]:
-            fetched = f' {artist["name"]}'
-            if "Various Artists" not in fetched:
-                info += fetched
-        results = VideosSearch(info, limit=1)
+        """
+        Returns (track_details_dict, track_id).
+        track_details_dict keys: title, link, vidid, duration_min, thumb
+        """
+        result = await self._api().track(link)
+        if result:
+            return result
+        LOGGER.warning("Spotify.track: API-2 failed, falling back to YouTube search")
+        return await self._yt_fallback_track(link)
+
+    async def _yt_fallback_track(self, link: str):
+        """Last-resort: search YouTube by track title scraped from the URL."""
+        from youtubesearchpython.__future__ import VideosSearch
+        # We can at least parse the Spotify track ID from the URL and search
+        # using whatever title the URL path suggests.
+        slug = link.rstrip("/").split("/")[-1].split("?")[0]
+        query = slug.replace("-", " ")
+        results = VideosSearch(query, limit=1)
         for result in (await results.next())["result"]:
             ytlink = result["link"]
             title = result["title"]
@@ -51,48 +76,37 @@ class SpotifyAPI:
         }
         return track_details, vidid
 
-    async def playlist(self, url):
-        playlist = self.spotify.playlist(url)
-        playlist_id = playlist["id"]
-        results = []
-        for item in playlist["tracks"]["items"]:
-            music_track = item["track"]
-            info = music_track["name"]
-            for artist in music_track["artists"]:
-                fetched = f' {artist["name"]}'
-                if "Various Artists" not in fetched:
-                    info += fetched
-            results.append(info)
-        return results, playlist_id
+    # ── playlist ───────────────────────────────────────────────
+    async def playlist(self, url: str):
+        """Returns (list_of_search_queries, playlist_id)."""
+        result = await self._api().playlist(url)
+        if result:
+            return result
+        return [], url.split("/")[-1].split("?")[0]
 
-    async def album(self, url):
-        album = self.spotify.album(url)
-        album_id = album["id"]
-        results = []
-        for item in album["tracks"]["items"]:
-            info = item["name"]
-            for artist in item["artists"]:
-                fetched = f' {artist["name"]}'
-                if "Various Artists" not in fetched:
-                    info += fetched
-            results.append(info)
+    # ── album ──────────────────────────────────────────────────
+    async def album(self, url: str):
+        """Returns (list_of_search_queries, album_id)."""
+        result = await self._api().album(url)
+        if result:
+            return result
+        return [], url.split("/")[-1].split("?")[0]
 
-        return (
-            results,
-            album_id,
-        )
+    # ── artist ─────────────────────────────────────────────────
+    async def artist(self, url: str):
+        """Returns (list_of_search_queries, artist_id)."""
+        result = await self._api().artist(url)
+        if result:
+            return result
+        return [], url.split("/")[-1].split("?")[0]
 
-    async def artist(self, url):
-        artistinfo = self.spotify.artist(url)
-        artist_id = artistinfo["id"]
-        results = []
-        artisttoptracks = self.spotify.artist_top_tracks(url)
-        for item in artisttoptracks["tracks"]:
-            info = item["name"]
-            for artist in item["artists"]:
-                fetched = f' {artist["name"]}'
-                if "Various Artists" not in fetched:
-                    info += fetched
-            results.append(info)
-
-        return results, artist_id
+    # ── download ───────────────────────────────────────────────
+    async def download(self, url: str, video: bool = False) -> Optional[str]:
+        """
+        Download a Spotify track via API-2 (encrypted CDN → AES-CTR → OGG).
+        Returns local file path on success, None on failure.
+        """
+        if not config.API_URL2 or not config.API_KEY2:
+            LOGGER.warning("Spotify.download: API_URL2/API_KEY2 not set")
+            return None
+        return await self._api().download(url, video=video)

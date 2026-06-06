@@ -5,7 +5,11 @@ from typing import Union
 from pyrogram.types import InlineKeyboardMarkup
 
 import config
-from AnonXMusic import Carbon, YouTube, app
+from AnonXMusic import (
+    Carbon, YouTube, app,
+    Deezer, Gaana, JioSaavn, Kick, MXPlayer, Tidal, Twitch,
+    Apple, Spotify, SoundCloud,
+)
 from AnonXMusic.core.call import Anony
 from AnonXMusic.misc import db
 from AnonXMusic.utils.database import add_active_video_chat, is_active_chat
@@ -249,6 +253,71 @@ async def stream(
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
+
+    # ── API-2 powered platforms ───────────────────────────────────────────
+    elif streamtype in (
+        "spotify", "apple", "deezer", "gaana", "tidal",
+        "jiosaavn", "soundcloud_api", "twitch", "kick", "mxplayer",
+    ):
+        file_path = result.get("file_path") or result.get("filepath") or ""
+        title = (result.get("title") or "Unknown").title()
+        duration_min = result.get("duration_min") or "0:00"
+        thumbnail = result.get("thumb") or result.get("thumbnail") or ""
+        link = result.get("link") or ""
+
+        _img_map = {
+            "spotify":        config.SPOTIFY_PLAYLIST_IMG_URL,
+            "apple":          config.APPLE_IMG_URL,
+            "deezer":         config.DEEZER_IMG_URL,
+            "gaana":          config.GAANA_IMG_URL,
+            "tidal":          config.TIDAL_IMG_URL,
+            "jiosaavn":       config.JIOSAAVN_IMG_URL,
+            "soundcloud_api": config.SOUNCLOUD_IMG_URL,
+            "twitch":         config.TWITCH_IMG_URL,
+            "kick":           config.KICK_IMG_URL,
+            "mxplayer":       config.MXPLAYER_IMG_URL,
+        }
+        cover_img = thumbnail or _img_map.get(streamtype, config.PLAYLIST_IMG_URL)
+        is_video_stream = streamtype in ("twitch", "kick", "mxplayer")
+        status = True if (video or is_video_stream) else None
+
+        if await is_active_chat(chat_id):
+            await put_queue(
+                chat_id, original_chat_id, file_path, title, duration_min,
+                user_name, streamtype, user_id,
+                "video" if status else "audio",
+            )
+            position = len(db.get(chat_id)) - 1
+            button = aq_markup(_, chat_id)
+            await app.send_message(
+                chat_id=original_chat_id,
+                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
+                reply_markup=InlineKeyboardMarkup(button),
+            )
+        else:
+            if not forceplay:
+                db[chat_id] = []
+            await Anony.join_call(
+                chat_id, original_chat_id, file_path, video=status, image=cover_img
+            )
+            await put_queue(
+                chat_id, original_chat_id, file_path, title, duration_min,
+                user_name, streamtype, user_id,
+                "video" if status else "audio",
+                forceplay=forceplay,
+            )
+            button = stream_markup(_, chat_id)
+            run = await app.send_photo(
+                original_chat_id,
+                photo=cover_img,
+                caption=_["stream_1"].format(
+                    link or config.SUPPORT_CHAT, title[:23], duration_min, user_name
+                ),
+                reply_markup=InlineKeyboardMarkup(button),
+            )
+            db[chat_id][0]["mystic"] = run
+            db[chat_id][0]["markup"] = "tg"
+
     elif streamtype == "telegram":
         file_path = result["path"]
         link = result["link"]
