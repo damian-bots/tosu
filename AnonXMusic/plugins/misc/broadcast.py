@@ -121,7 +121,7 @@ async def run_broadcast(state, targets, status_message=None):
             try:
                 content = await app.get_messages(content_chat_id, content_msg_id)
                 if not content: raise ValueError
-            except:
+            except Exception:
                 if status_message: await status_message.edit_text("❌ <b>Error:</b> The original message to be broadcasted was deleted.")
                 return
 
@@ -252,7 +252,7 @@ async def run_broadcast(state, targets, status_message=None):
                     last_update_time = time.time()
                 except FloodWait as fw:
                     await asyncio.sleep(fw.value)
-                except: 
+                except Exception:
                     pass
             
             i += BATCH_SIZE
@@ -279,7 +279,7 @@ async def run_broadcast(state, targets, status_message=None):
         if status_message:
             try:
                 await status_message.edit_text(final_text)
-            except:
+            except Exception:
                 pass
         elif initiator_id: 
             try: await app.send_message(initiator_id, final_text)
@@ -465,7 +465,7 @@ async def auto_clean():
                     for user in authusers:
                         user_id = await alpha_to_int(user)
                         adminlist[chat_id].append(user_id)
-        except:
+        except Exception:
             continue
 
 

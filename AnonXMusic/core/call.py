@@ -114,39 +114,39 @@ class Call(PyTgCalls):
         try:
             await _clear_(chat_id)
             await assistant.leave_group_call(chat_id)
-        except:
-            pass
+        except Exception as e:
+            LOGGER(__name__).debug(f"stop_stream failed for chat {chat_id}: {e}")
 
     async def stop_stream_force(self, chat_id: int):
         try:
             if config.STRING1:
                 await self.one.leave_group_call(chat_id)
-        except:
-            pass
+        except Exception as e:
+            LOGGER(__name__).debug(f"force_stop assistant 1 leave failed: {e}")
         try:
             if config.STRING2:
                 await self.two.leave_group_call(chat_id)
-        except:
-            pass
+        except Exception as e:
+            LOGGER(__name__).debug(f"force_stop assistant 2 leave failed: {e}")
         try:
             if config.STRING3:
                 await self.three.leave_group_call(chat_id)
-        except:
-            pass
+        except Exception as e:
+            LOGGER(__name__).debug(f"force_stop assistant 3 leave failed: {e}")
         try:
             if config.STRING4:
                 await self.four.leave_group_call(chat_id)
-        except:
-            pass
+        except Exception as e:
+            LOGGER(__name__).debug(f"force_stop assistant 4 leave failed: {e}")
         try:
             if config.STRING5:
                 await self.five.leave_group_call(chat_id)
-        except:
-            pass
+        except Exception as e:
+            LOGGER(__name__).debug(f"force_stop assistant 5 leave failed: {e}")
         try:
             await _clear_(chat_id)
-        except:
-            pass
+        except Exception as e:
+            LOGGER(__name__).debug(f"force_stop clear failed for chat {chat_id}: {e}")
 
     async def speedup_stream(self, chat_id: int, file_path, speed, playing):
         assistant = await group_assistant(self, chat_id)
@@ -222,14 +222,14 @@ class Call(PyTgCalls):
         try:
             check = db.get(chat_id)
             check.pop(0)
-        except:
-            pass
+        except Exception as e:
+            LOGGER(__name__).debug(f"force_stop_stream queue pop failed: {e}")
         await remove_active_video_chat(chat_id)
         await remove_active_chat(chat_id)
         try:
             await assistant.leave_group_call(chat_id)
-        except:
-            pass
+        except Exception as e:
+            LOGGER(__name__).debug(f"force_stop_stream leave call failed for chat {chat_id}: {e}")
 
     async def skip_stream(
         self,
@@ -343,11 +343,13 @@ class Call(PyTgCalls):
             if not check:
                 await _clear_(chat_id)
                 return await client.leave_group_call(chat_id)
-        except:
+        except Exception as e:
+            LOGGER(__name__).warning(f"change_stream queue processing failed for chat {chat_id}: {e}")
             try:
                 await _clear_(chat_id)
                 return await client.leave_group_call(chat_id)
-            except:
+            except Exception as e2:
+                LOGGER(__name__).debug(f"change_stream cleanup also failed: {e2}")
                 return
         else:
             queued = check[0]["file"]
@@ -418,7 +420,8 @@ class Call(PyTgCalls):
                         videoid=True,
                         video=True if str(streamtype) == "video" else False,
                     )
-                except:
+                except Exception as e:
+                    LOGGER(__name__).error(f"YouTube download failed for {videoid}: {e}")
                     return await mystic.edit_text(
                         _["call_6"], disable_web_page_preview=True
                     )
@@ -435,7 +438,8 @@ class Call(PyTgCalls):
                     )
                 try:
                     await client.change_stream(chat_id, stream)
-                except:
+                except Exception as e:
+                    LOGGER(__name__).error(f"change_stream vid_ failed for chat {chat_id}: {e}")
                     return await app.send_message(
                         original_chat_id,
                         text=_["call_6"],
@@ -471,7 +475,8 @@ class Call(PyTgCalls):
                 )
                 try:
                     await client.change_stream(chat_id, stream)
-                except:
+                except Exception as e:
+                    LOGGER(__name__).error(f"change_stream index_ failed for chat {chat_id}: {e}")
                     return await app.send_message(
                         original_chat_id,
                         text=_["call_6"],
@@ -502,7 +507,8 @@ class Call(PyTgCalls):
                     )
                 try:
                     await client.change_stream(chat_id, stream)
-                except:
+                except Exception as e:
+                    LOGGER(__name__).error(f"change_stream failed for chat {chat_id}: {e}")
                     return await app.send_message(
                         original_chat_id,
                         text=_["call_6"],
