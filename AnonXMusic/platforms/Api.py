@@ -393,7 +393,6 @@ class ApiPlatform:
         return details, track_id
 
     @staticmethod
-    @staticmethod
     def _extract_music_tracks(data: dict) -> list[dict]:
         """
         Extract a list of MusicTrack dicts from a PlatformTracks API response.
@@ -416,9 +415,19 @@ class ApiPlatform:
         for t in raw:
             if not isinstance(t, dict):
                 continue
-            title = t.get("title") or t.get("name") or ""
+            # Try every common title field the API may return.
+            # Go's MusicTrack.Title maps to JSON "title"; some wrappers use "name".
+            title = (
+                t.get("title")
+                or t.get("name")
+                or t.get("track_name")
+                or ""
+            )
+            # Don't skip tracks with no title — use a placeholder so the queue
+            # entry is visible and can still be played (matches Go behaviour which
+            # shows a blank name rather than silently dropping the track).
             if not title:
-                continue
+                title = "Unknown Track"
             tracks.append({
                 "title":     title,
                 "id":        t.get("id") or "",
@@ -446,8 +455,13 @@ class ApiPlatform:
         if not data:
             return None
         tracks = self._extract_music_tracks(data)
-        plist_id = data.get("id") or data.get("playlist_id") or url
-        return tracks, plist_id
+        # IMPORTANT: always return the original full URL as plist_id.
+        # The API may return a bare track ID (e.g. "7BwnuRzwTSFOGHryGIfp9b") in
+        # data["id"], but the callback handler stores this value in lyrical[] and
+        # later re-fetches with Spotify.playlist(videoid). A bare ID is NOT a valid
+        # URL for /api/get_url — the API rejects it, returns None, result = [],
+        # and stream() exits silently with count == 0. Always use the original URL.
+        return tracks, url
 
     async def album(self, url: str) -> Optional[tuple[list[dict], str]]:
         """Same shape as playlist() — reuses get_info."""
@@ -459,8 +473,8 @@ class ApiPlatform:
         if not data:
             return None
         tracks = self._extract_music_tracks(data)
-        artist_id = data.get("id") or data.get("artist_id") or url
-        return tracks, artist_id
+        # Same fix: always return the original URL.
+        return tracks, url
 
     # ── Download ───────────────────────────────────────────────
     async def download(self, url: str, video: bool = False) -> Optional[str]:
