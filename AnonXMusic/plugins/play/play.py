@@ -174,7 +174,7 @@ async def play_commnd(
                         message.from_user.id,
                     )
                 except:
-                    return await mystic.edit_text(_["play_3"])
+                    return await mystic.edit_text(_["play_dl_failed"].format("YouTube (Playlist)"))
                 streamtype = "playlist"
                 plist_type = "yt"
                 if "&" in url:
@@ -187,7 +187,7 @@ async def play_commnd(
                 try:
                     details, track_id = await YouTube.track(url)
                 except:
-                    return await mystic.edit_text(_["play_3"])
+                    return await mystic.edit_text(_["play_dl_failed"].format("YouTube"))
                 streamtype = "youtube"
                 img = details["thumb"]
                 cap = _["play_10"].format(
@@ -518,7 +518,7 @@ async def play_commnd(
         try:
             details, track_id = await YouTube.track(query)
         except:
-            return await mystic.edit_text(_["play_3"])
+            return await mystic.edit_text(_["play_dl_failed"].format("YouTube"))
         streamtype = "youtube"
 
     if str(playmode) == "Direct":
@@ -648,7 +648,7 @@ async def play_music(client, CallbackQuery, _):
     try:
         details, track_id = await YouTube.track(vidid, True)
     except:
-        return await mystic.edit_text(_["play_3"])
+        return await mystic.edit_text(_["play_dl_failed"].format("YouTube"))
     if details["duration_min"]:
         duration_sec = time_to_seconds(details["duration_min"])
         if duration_sec > config.DURATION_LIMIT:
