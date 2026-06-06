@@ -376,21 +376,42 @@ class ApiPlatform:
         so existing play.py call-sites work without change.
 
         track_details_dict keys: title, link, vidid, duration_min, thumb
+
+        We use /api/get_url (-> PlatformTracks with full MusicTrack metadata)
+        instead of /api/track (-> TrackInfo which only carries the CDN URL and key,
+        *no* duration / title / thumbnail).  This is exactly how TgMusicBot's own
+        play.go works: it calls wrapper.GetInfo() to get metadata, then downloads
+        separately via wrapper.GetTrack() + DownloadTrack().
         """
-        info = await self.get_track(url)
-        if not info:
+        data = await self.get_info(url)
+        if not data:
             return None
-        track_id = info.get("id") or info.get("track_id") or url
-        duration_sec = info.get("duration") or 0
-        duration_min = seconds_to_min(duration_sec) if isinstance(duration_sec, int) else str(duration_sec)
+
+        results = data.get("results") or []
+        if not results:
+            return None
+
+        # First result is the primary track
+        song = results[0]
+        track_id = song.get("id") or url
+        duration_sec = song.get("duration") or 0
+        # duration is int seconds from the API (MusicTrack.Duration)
+        if isinstance(duration_sec, int) and duration_sec > 0:
+            duration_min = seconds_to_min(duration_sec)
+        else:
+            # No duration info -> treat as live stream (None triggers live-confirm UI)
+            duration_min = None
+
         details = {
-            "title":        info.get("title") or info.get("name") or "Unknown",
-            "link":         info.get("url") or url,
+            "title":        song.get("title") or song.get("name") or "Unknown",
+            "link":         song.get("url") or url,
             "vidid":        track_id,
             "duration_min": duration_min,
-            "thumb":        info.get("thumbnail") or info.get("thumb") or "",
-            # keep raw info for download step
-            "_raw":         info,
+            "thumb":        song.get("thumbnail") or "",
+            "channel":      song.get("channel") or "",
+            "views":        song.get("views") or "",
+            # keep original url so download() can call /api/track correctly
+            "_url":         url,
         }
         return details, track_id
 
@@ -448,25 +469,30 @@ class ApiPlatform:
     async def download(self, url: str, video: bool = False) -> Optional[str]:
         """
         Full download pipeline:
-          1. Fetch track info from API-2 (/api/track)
+          1. Fetch CDN info from API-2 (/api/track → TrackInfo)
           2. If Spotify + key → AES-CTR decrypt (mirrors spotify_dl.go)
-          3. Otherwise → direct CDN stream
+          3. For live/stream platforms (Twitch, Kick, MX Player) → return HLS URL directly
+          4. Otherwise → direct CDN stream download
 
-        Returns local file path on success, None on failure.
+        Note: /api/track returns TrackInfo {Id, URL, CdnURL, Key, Platform}.
+              /api/get_url returns PlatformTracks with full MusicTrack metadata.
+              We call /api/track here for the CDN URL only; metadata comes from track().
+        Returns local file path (or live stream URL) on success, None on failure.
         """
         info = await self.get_track(url)
         if not info:
             LOGGER.error(f"API-2: get_track returned nothing for {url}")
             return None
 
-        cdn_url: str = info.get("cdn_url") or info.get("cdnurl") or info.get("url") or ""
+        # TrackInfo fields: id, url (original), cdnurl (CDN download URL), key, platform
+        cdn_url: str = info.get("cdnurl") or info.get("cdn_url") or info.get("url") or ""
         if not cdn_url:
             LOGGER.error(f"API-2: no CDN URL in track info for {url}")
             return None
 
         platform: str = (info.get("platform") or self.platform_of(url)).lower()
         hex_key: str = info.get("key") or ""
-        track_id: str = info.get("id") or info.get("track_id") or os.path.basename(cdn_url.split("?")[0])
+        track_id: str = info.get("id") or os.path.basename(cdn_url.split("?")[0])
 
         if platform in _ENCRYPTED_PLATFORMS and hex_key:
             LOGGER.info(f"API-2: Spotify encrypted download for {track_id}")
