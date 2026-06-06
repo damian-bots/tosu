@@ -37,14 +37,11 @@ LOGGER = LOG(__name__)
 
 
 CHUNK_SIZE = 1024 * 1024
-V2_HTTP_RETRIES = 5
-V2_DOWNLOAD_CYCLES = 8
+V2_JOB_POLL_RETRIES = 12     # how many times to poll jobStatus (3s each = up to 36s)
+V2_CREATE_JOB_RETRIES = 3    # attempts to get a job_id
+V2_DOWNLOAD_CYCLES = 2       # full create→poll→download retry cycles
 SEARCH_RETRIES = 4
 HARD_RETRY_WAIT = 3
-JOB_POLL_ATTEMPTS = 10
-JOB_POLL_INTERVAL = 2.0
-JOB_POLL_BACKOFF = 1.2
-NO_CANDIDATE_WAIT = 4
 CDN_RETRIES = 5
 CDN_RETRY_DELAY = 2
 
@@ -377,75 +374,149 @@ def _normalize_candidate_to_url(candidate: str, api_url: str) -> Optional[str]:
 def _guess_ext_from_url(u: str, is_video: bool) -> str:
     return "mp4" if is_video else "m4a"
 
-async def _v2_request_json(endpoint: str, params: Dict[str, Any]) -> Optional[Any]:
-    api_url = getattr(config, "API_URL", None)
-    api_key = getattr(config, "API_KEY", None)
-    if not api_url or not api_key: return None
-    base = api_url.rstrip("/")
-    url = f"{base}/{endpoint.lstrip('/')}"
-    if "api_key" not in params: params["api_key"] = api_key
-    for attempt in range(1, V2_HTTP_RETRIES + 1):
+async def _v2_create_job(session: aiohttp.ClientSession, api_url: str, api_key: str,
+                         video_id: str, is_video: bool) -> Optional[str]:
+    """
+    POST to the download endpoint and return the job_id.
+    Mirrors API.create_job() from _api.py — 3 attempts, 1s sleep on failure.
+    """
+    endpoint = f"{api_url.rstrip('/')}/youtube/v2/download"
+    params = {
+        "api_key": api_key,
+        "query": video_id,
+        "isVideo": str(is_video).lower(),
+    }
+    for attempt in range(3):
         try:
-            session = await get_http_session()
-            async with session.get(url, params=params) as resp:
-                try: data = await resp.json(content_type=None)
-                except Exception: data = None
-                if 200 <= resp.status < 300: return data
-                if resp.status in (401, 403): 
-                    _inc(f"hard_fail_{resp.status}")
-                    return None
-                if 500 <= resp.status < 600: _inc("api_fail_5xx")
-                else: _inc("api_fail_other_4xx")
-                return None
-        except asyncio.TimeoutError: _inc("timeout_fail")
-        except Exception: _inc("network_fail")
-        if attempt < V2_HTTP_RETRIES: await asyncio.sleep(1)
+            async with session.get(endpoint, params=params,
+                                   timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status != 200:
+                    await asyncio.sleep(1)
+                    continue
+                data = await resp.json(content_type=None)
+                if data.get("status") != "queued":
+                    await asyncio.sleep(1)
+                    continue
+                job_id = data.get("job_id")
+                if not job_id:
+                    await asyncio.sleep(1)
+                    continue
+                return job_id
+        except Exception:
+            await asyncio.sleep(1)
     return None
 
+
+async def _v2_get_url(session: aiohttp.ClientSession, api_url: str,
+                      job_id: str, retries: int = 12) -> Optional[str]:
+    """
+    Poll jobStatus until done and return the public download URL.
+    Mirrors API.get_url() from _api.py — polls up to `retries` times, 3s sleep each.
+    """
+    endpoint = f"{api_url.rstrip('/')}/youtube/jobStatus"
+    params = {"job_id": job_id}
+    for attempt in range(1, retries + 1):
+        try:
+            async with session.get(endpoint, params=params,
+                                   timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status != 200:
+                    await asyncio.sleep(3)
+                    continue
+                data = await resp.json(content_type=None)
+                if data.get("status") != "success":
+                    await asyncio.sleep(3)
+                    continue
+                job = data.get("job", {})
+                if job.get("status", "") != "done":
+                    await asyncio.sleep(3)
+                    continue
+                public_url = job.get("result", {}).get("public_url")
+                if not public_url:
+                    break
+                full_url = f"{api_url.rstrip('/')}{public_url}" if public_url.startswith("/") else public_url
+                LOGGER.info(f"V2-API: Got URL on attempt #{attempt}: {full_url}")
+                return full_url
+        except Exception:
+            pass
+        await asyncio.sleep(3)
+    return None
+
+
+async def _v2_save_file(session: aiohttp.ClientSession, url: str, out_path: str) -> Optional[str]:
+    """
+    Stream-download the file at `url` to `out_path`.
+    Mirrors API.save_file() from _api.py.
+    """
+    _ensure_dir(str(Path(out_path).parent))
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=None)) as resp:
+            if resp.status != 200:
+                return None
+            async with aiofiles.open(out_path, "wb") as f:
+                async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
+                    if chunk:
+                        await f.write(chunk)
+        if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            return out_path
+        return None
+    except Exception as e:
+        LOGGER.error(f"V2 save_file failed: {e}")
+        return None
+
+
 async def v2_download(link: str, media_type: str) -> Optional[str]:
-    if not link: return None
+    """
+    Full download pipeline mirroring _api.py's API.download():
+      1. Check in-memory cache
+      2. create_job  →  get_url  →  save_file
+      Retries the full cycle up to 2 times on failure.
+    """
+    if not link:
+        return None
+
+    api_url = getattr(config, "API_URL", None)
+    api_key = getattr(config, "API_KEY", None)
+    if not api_url or not api_key:
+        return None
+
     is_video = (media_type == "video")
     vid = extract_video_id(str(link))
     query = vid or str(link)
-    api_url = getattr(config, "API_URL", None)
-    for cycle in range(1, V2_DOWNLOAD_CYCLES + 1):
-        resp = await _v2_request_json("youtube/v2/download", {"query": query, "isVideo": str(is_video).lower()})
-        if not resp:
+    ext = "mp4" if is_video else "m4a"
+    base_name = vid if vid else "audio"
+    out_path = os.path.join(DOWNLOAD_DIR, f"{base_name}.{ext}")
+
+    # In-memory cache check (fast path)
+    if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+        LOGGER.info(f"V2-API: In-memory path hit for {base_name}")
+        return out_path
+
+    session = await get_http_session()
+
+    for attempt in range(2):
+        job_id = await _v2_create_job(session, api_url, api_key, query, is_video)
+        if not job_id:
             _inc("hard_cycle_retries")
-            if cycle < V2_DOWNLOAD_CYCLES: await asyncio.sleep(1); continue
-            return None
-        candidate = _extract_candidate(resp)
-        if candidate and _looks_like_status_text(candidate): candidate = None
-        job_id = None
-        if isinstance(resp, dict):
-            job_id = resp.get("job_id") or resp.get("job")
-            if isinstance(job_id, dict) and "id" in job_id: job_id = job_id.get("id")
-        if job_id and not candidate:
-            interval = JOB_POLL_INTERVAL
-            for _ in range(1, JOB_POLL_ATTEMPTS + 1):
-                await asyncio.sleep(interval)
-                status = await _v2_request_json("youtube/jobStatus", {"job_id": str(job_id)})
-                candidate = _extract_candidate(status) if status else None
-                if candidate and not _looks_like_status_text(candidate): break
-                interval *= JOB_POLL_BACKOFF
-        if not candidate:
+            if attempt == 0:
+                await asyncio.sleep(2)
+            continue
+
+        dl_url = await _v2_get_url(session, api_url, job_id)
+        if not dl_url:
             _inc("no_candidate")
-            if cycle < V2_DOWNLOAD_CYCLES: await asyncio.sleep(NO_CANDIDATE_WAIT); continue
-            return None
-        normalized = _normalize_candidate_to_url(candidate, api_url)
-        if not normalized:
-            _inc("no_candidate")
-            if cycle < V2_DOWNLOAD_CYCLES: await asyncio.sleep(NO_CANDIDATE_WAIT); continue
-            return None
-        ext = _guess_ext_from_url(normalized, is_video=is_video)
-        base_name = vid if vid else "audio"
-        out_path = os.path.join(DOWNLOAD_DIR, f"{base_name}.{ext}")
-        if os.path.exists(out_path): return out_path
-        path = await _download_from_cdn(normalized, out_path)
-        if not path:
+            if attempt == 0:
+                await asyncio.sleep(2)
+            continue
+
+        fpath = await _v2_save_file(session, dl_url, out_path)
+        if not fpath:
             _inc("cdn_fail")
-            if cycle < V2_DOWNLOAD_CYCLES: await asyncio.sleep(2); continue
-        return path
+            if attempt == 0:
+                await asyncio.sleep(2)
+            continue
+
+        return fpath
+
     return None
 
 async def optimized_download(link: str, is_video: bool) -> Optional[str]:
