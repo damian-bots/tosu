@@ -47,7 +47,7 @@ async def langs_command(client, message: Message, _):
 async def lanuagecb(client, CallbackQuery, _):
     try:
         await CallbackQuery.answer()
-    except:
+    except Exception:
         pass
     keyboard = lanuages_keyboard(_)
     return await CallbackQuery.edit_message_reply_markup(reply_markup=keyboard)
@@ -63,7 +63,7 @@ async def language_markup(client, CallbackQuery, _):
     try:
         _ = get_string(langauge)
         await CallbackQuery.answer(_["lang_2"], show_alert=True)
-    except:
+    except Exception:
         _ = get_string(old)
         return await CallbackQuery.answer(
             _["lang_3"],

@@ -47,7 +47,7 @@ async def overall_stats(client, CallbackQuery, _):
     upl = back_stats_buttons(_)
     try:
         await CallbackQuery.answer()
-    except:
+    except Exception:
         pass
     await CallbackQuery.edit_message_text(_["gstats_1"].format(app.mention))
     served_chats = len(await get_served_chats())
@@ -80,7 +80,7 @@ async def bot_stats(client, CallbackQuery, _):
     upl = back_stats_buttons(_)
     try:
         await CallbackQuery.answer()
-    except:
+    except Exception:
         pass
     await CallbackQuery.edit_message_text(_["gstats_1"].format(app.mention))
     p_core = psutil.cpu_count(logical=False)
@@ -92,7 +92,7 @@ async def bot_stats(client, CallbackQuery, _):
             cpu_freq = f"{round(cpu_freq / 1000, 2)}ɢʜᴢ"
         else:
             cpu_freq = f"{round(cpu_freq, 2)}ᴍʜᴢ"
-    except:
+    except Exception:
         cpu_freq = "ғᴀɪʟᴇᴅ ᴛᴏ ғᴇᴛᴄʜ"
     hdd = psutil.disk_usage("/")
     total = hdd.total / (1024.0**3)

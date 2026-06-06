@@ -35,7 +35,7 @@ async def skip(cli, message: Message, _, chat_id):
                             popped = None
                             try:
                                 popped = check.pop(0)
-                            except:
+                            except Exception:
                                 return await message.reply_text(_["admin_12"])
                             if popped:
                                 await auto_clean(popped)
@@ -49,7 +49,7 @@ async def skip(cli, message: Message, _, chat_id):
                                         reply_markup=close_markup(_),
                                     )
                                     await Anony.stop_stream(chat_id)
-                                except:
+                                except Exception:
                                     return
                                 break
                     else:
@@ -76,9 +76,9 @@ async def skip(cli, message: Message, _, chat_id):
                 )
                 try:
                     return await Anony.stop_stream(chat_id)
-                except:
+                except Exception:
                     return
-        except:
+        except Exception:
             try:
                 await message.reply_text(
                     text=_["admin_6"].format(
@@ -87,7 +87,7 @@ async def skip(cli, message: Message, _, chat_id):
                     reply_markup=close_markup(_),
                 )
                 return await Anony.stop_stream(chat_id)
-            except:
+            except Exception:
                 return
     queued = check[0]["file"]
     title = (check[0]["title"]).title()
@@ -108,11 +108,11 @@ async def skip(cli, message: Message, _, chat_id):
             return await message.reply_text(_["admin_7"].format(title))
         try:
             image = await YouTube.thumbnail(videoid, True)
-        except:
+        except Exception:
             image = None
         try:
             await Anony.skip_stream(chat_id, link, video=status, image=image)
-        except:
+        except Exception:
             return await message.reply_text(_["call_6"])
         button = stream_markup(_, chat_id)
         img = await get_thumb(videoid)
@@ -137,15 +137,15 @@ async def skip(cli, message: Message, _, chat_id):
                 videoid=True,
                 video=status,
             )
-        except:
+        except Exception:
             return await mystic.edit_text(_["call_6"])
         try:
             image = await YouTube.thumbnail(videoid, True)
-        except:
+        except Exception:
             image = None
         try:
             await Anony.skip_stream(chat_id, file_path, video=status, image=image)
-        except:
+        except Exception:
             return await mystic.edit_text(_["call_6"])
         button = stream_markup(_, chat_id)
         img = await get_thumb(videoid)
@@ -165,7 +165,7 @@ async def skip(cli, message: Message, _, chat_id):
     elif "index_" in queued:
         try:
             await Anony.skip_stream(chat_id, videoid, video=status)
-        except:
+        except Exception:
             return await message.reply_text(_["call_6"])
         button = stream_markup(_, chat_id)
         run = await message.reply_photo(
@@ -183,11 +183,11 @@ async def skip(cli, message: Message, _, chat_id):
         else:
             try:
                 image = await YouTube.thumbnail(videoid, True)
-            except:
+            except Exception:
                 image = None
         try:
             await Anony.skip_stream(chat_id, queued, video=status, image=image)
-        except:
+        except Exception:
             return await message.reply_text(_["call_6"])
         if videoid == "telegram":
             button = stream_markup(_, chat_id)

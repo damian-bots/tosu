@@ -63,7 +63,7 @@ async def sudoers_list(client, message: Message, _):
                     text += _["sudo_6"]
                 count += 1
                 text += f"{count}➤ {user}\n"
-            except:
+            except Exception:
                 continue
     if not text:
         await message.reply_text(_["sudo_7"])
