@@ -546,13 +546,14 @@ async def play_commnd(
         if not plist_type:
             # For index/direct-link streamtypes details is a raw URL string; skip dict checks.
             if streamtype not in ("index", "direct_link", "live_stream"):
-                if details["duration_min"]:
-                    duration_sec = time_to_seconds(details["duration_min"])
+                duration_sec = time_to_seconds(details["duration_min"])
+                if duration_sec > 0:
                     if duration_sec > config.DURATION_LIMIT:
                         return await mystic.edit_text(
                             _["play_6"].format(config.DURATION_LIMIT_MIN, app.mention)
                         )
                 else:
+                    # duration_sec == 0 means no duration info → live stream
                     buttons = livestream_markup(
                         _,
                         track_id,
@@ -672,13 +673,14 @@ async def play_music(client, CallbackQuery, _):
         details, track_id = await YouTube.track(vidid, True)
     except:
         return await mystic.edit_text(_["play_dl_failed"].format("YouTube"))
-    if details["duration_min"]:
-        duration_sec = time_to_seconds(details["duration_min"])
+    duration_sec = time_to_seconds(details["duration_min"])
+    if duration_sec > 0:
         if duration_sec > config.DURATION_LIMIT:
             return await mystic.edit_text(
                 _["play_6"].format(config.DURATION_LIMIT_MIN, app.mention)
             )
     else:
+        # duration_sec == 0 means no duration info → live stream
         buttons = livestream_markup(
             _,
             track_id,
