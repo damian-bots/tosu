@@ -59,8 +59,18 @@ async def alpha_to_int(user_id_alphabet: str) -> int:
 
 
 def time_to_seconds(time):
-    stringt = str(time)
-    return sum(int(x) * 60**i for i, x in enumerate(reversed(stringt.split(":"))))
+    """Convert a duration string (MM:SS, HH:MM:SS, or plain seconds) to seconds.
+
+    Returns 0 for any invalid / sentinel value such as "-", "", or None so
+    callers that compare against DURATION_LIMIT never crash.
+    """
+    if not time or str(time).strip() in ("-", "", "None", "Live", "Unknown"):
+        return 0
+    stringt = str(time).strip()
+    try:
+        return sum(int(x) * 60**i for i, x in enumerate(reversed(stringt.split(":"))))
+    except (ValueError, TypeError):
+        return 0
 
 
 def seconds_to_min(seconds):
