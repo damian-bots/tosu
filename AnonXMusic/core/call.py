@@ -506,6 +506,19 @@ class Call(PyTgCalls):
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "tg"
             else:
+                # Guard: if the queued file no longer exists on disk (e.g. it was
+                # a downloaded Spotify/API-2 track that got cleaned up between queue
+                # time and play time), tell the chat and skip rather than letting
+                # ffmpeg/ntgcalls fail silently.
+                if not queued.startswith("http") and not os.path.isfile(queued):
+                    mystic = await _safe_tg_call(
+                        app.send_message, original_chat_id, _["call_7"]
+                    )
+                    platform = check[0].get("streamtype") or "Unknown"
+                    return await mystic.edit_text(
+                        _["play_dl_failed"].format(platform),
+                        disable_web_page_preview=True,
+                    )
                 if video:
                     stream = AudioVideoPiped(
                         queued,
