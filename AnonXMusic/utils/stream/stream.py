@@ -38,30 +38,76 @@ async def stream(
     if forceplay:
         await Anony.force_stop_stream(chat_id)
     if streamtype == "playlist":
+        from AnonXMusic.utils.formatters import seconds_to_min
         msg = f"{_['play_19']}\n\n"
         count = 0
-        for search in result:
+        for track in result:
             if int(count) == config.PLAYLIST_FETCH_LIMIT:
                 continue
-            try:
-                (
-                    title,
-                    duration_min,
-                    duration_sec,
-                    thumbnail,
-                    vidid,
-                ) = await YouTube.details(search, False if spotify else True)
-            except:
-                continue
-            if str(duration_min) == "None":
-                continue
-            if duration_sec > config.DURATION_LIMIT:
-                continue
+
+            # ── Determine track metadata ──────────────────────────────────────
+            # Go's handleMultipleTracks works directly with MusicTrack dicts from
+            # the API (title, id, url, thumbnail, duration in secs, platform).
+            # We mirror that: use the API data directly and only fall back to a
+            # YouTube text-search when the track has no direct URL.
+            if isinstance(track, dict) and track.get("title"):
+                # API-2 MusicTrack dict — use it directly (mirrors Go)
+                title       = track.get("title") or "Unknown"
+                duration_sec = int(track.get("duration") or 0)
+                thumbnail   = track.get("thumbnail") or ""
+                vidid       = track.get("id") or track.get("url") or ""
+                platform    = track.get("platform") or ""
+                direct_url  = track.get("url") or ""
+
+                if duration_sec > 0:
+                    duration_min = seconds_to_min(duration_sec)
+                else:
+                    duration_min = None
+
+                if not title or not vidid:
+                    continue
+                if duration_min is None:
+                    continue
+                if duration_sec > config.DURATION_LIMIT:
+                    continue
+
+                # For non-YouTube platforms the API already provides a playable
+                # URL — queue it directly without a YouTube re-search.
+                if direct_url and platform and platform.lower() not in ("youtube", ""):
+                    file_ref = direct_url   # direct CDN / stream URL
+                    thumb    = thumbnail
+                else:
+                    # YouTube track — use vid_ prefix so the queue knows to
+                    # download it via yt-dlp when it's time to play.
+                    file_ref = f"vid_{vidid}" if vidid else direct_url
+                    thumb    = thumbnail
+
+            else:
+                # Legacy path: plain search-query string from old YouTube playlists
+                search = track if isinstance(track, str) else str(track)
+                try:
+                    (
+                        title,
+                        duration_min,
+                        duration_sec,
+                        thumb,
+                        vidid,
+                    ) = await YouTube.details(search, False if spotify else True)
+                except Exception:
+                    continue
+                if str(duration_min) == "None":
+                    continue
+                if duration_sec > config.DURATION_LIMIT:
+                    continue
+                file_ref  = f"vid_{vidid}"
+                thumbnail = thumb
+
+            # ── Queue or start ────────────────────────────────────────────────
             if await is_active_chat(chat_id):
                 await put_queue(
                     chat_id,
                     original_chat_id,
-                    f"vid_{vidid}",
+                    file_ref,
                     title,
                     duration_min,
                     user_name,
@@ -78,17 +124,24 @@ async def stream(
                     db[chat_id] = []
                 status = True if video else None
                 try:
-                    file_path, direct = await YouTube.download(
-                        vidid, mystic, video=status, videoid=True
-                    )
-                except:
+                    if file_ref.startswith("vid_"):
+                        # YouTube: download now
+                        yt_id = file_ref[4:]
+                        file_path, direct = await YouTube.download(
+                            yt_id, mystic, video=status, videoid=True
+                        )
+                    else:
+                        # API-2 direct URL — no download needed; ntgcalls streams it
+                        file_path = file_ref
+                        direct    = True
+                except Exception:
                     raise AssistantErr(_["play_14"])
                 await Anony.join_call(
                     chat_id,
                     original_chat_id,
                     file_path,
                     video=status,
-                    image=thumbnail,
+                    image=thumb,
                 )
                 await put_queue(
                     chat_id,
@@ -102,7 +155,7 @@ async def stream(
                     "video" if video else "audio",
                     forceplay=forceplay,
                 )
-                img = await get_thumb(vidid)
+                img = await get_thumb(vidid) if file_ref.startswith("vid_") else (thumb or config.SPOTIFY_PLAYLIST_IMG_URL)
                 button = stream_markup(_, chat_id)
                 run = await app.send_photo(
                     original_chat_id,
