@@ -85,7 +85,7 @@ ENABLE_GAANA      = _bool("ENABLE_GAANA",      True)
 ENABLE_TIDAL      = _bool("ENABLE_TIDAL",      False)
 ENABLE_JIOSAAVN   = _bool("ENABLE_JIOSAAVN",   True)
 ENABLE_TWITCH     = _bool("ENABLE_TWITCH",     True)
-ENABLE_KICK       = _bool("ENABLE_KICK",       True)
+ENABLE_KICK       = _bool("ENABLE_KICK",       False)
 ENABLE_MXPLAYER   = _bool("ENABLE_MXPLAYER",   True)
 
 
