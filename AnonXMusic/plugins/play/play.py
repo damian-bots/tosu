@@ -199,7 +199,18 @@ async def play_commnd(
             if not config.ENABLE_SPOTIFY:
                 return await mystic.edit_text(_["play_disabled"].format("Spotify"))
             spotify = True
-            if not config.SPOTIFY_CLIENT_ID and not config.SPOTIFY_CLIENT_SECRET:
+            # Allow the API-2 path (API_URL2 + API_KEY2) even without legacy
+            # Spotify developer credentials (SPOTIFY_CLIENT_ID / SECRET).
+            # Only block if *neither* auth method is configured.
+            _has_legacy_creds = bool(
+                getattr(config, "SPOTIFY_CLIENT_ID", None)
+                and getattr(config, "SPOTIFY_CLIENT_SECRET", None)
+            )
+            _has_api2 = bool(
+                getattr(config, "API_URL2", None)
+                and getattr(config, "API_KEY2", None)
+            )
+            if not _has_legacy_creds and not _has_api2:
                 return await mystic.edit_text(
                     "» sᴘᴏᴛɪғʏ ɪs ɴᴏᴛ sᴜᴘᴘᴏʀᴛᴇᴅ ʏᴇᴛ.\n\nᴘʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ."
                 )
@@ -795,6 +806,7 @@ async def play_playlists_command(client, CallbackQuery, _):
                 result, _ = await Apple.playlist(videoid, True)
         except:
             return await mystic.edit_text(_["play_3"])
+        spotify = True  # MusicTrack dicts from API-2; not YouTube video IDs
     elif ptype in ("deezerplay", "deezeralbum"):
         if not config.API_URL2 or not config.API_KEY2:
             return await mystic.edit_text("❌ Deezer requires API_URL2 & API_KEY2.")
@@ -805,7 +817,7 @@ async def play_playlists_command(client, CallbackQuery, _):
                 result, _ = await Deezer.playlist(videoid)
         except:
             return await mystic.edit_text(_["play_3"])
-        spotify = False
+        spotify = True  # MusicTrack dicts from API-2; not YouTube video IDs
     elif ptype in ("tidalplay", "tidalalbum"):
         if not config.API_URL2 or not config.API_KEY2:
             return await mystic.edit_text("❌ Tidal requires API_URL2 & API_KEY2.")
@@ -816,7 +828,7 @@ async def play_playlists_command(client, CallbackQuery, _):
                 result, _ = await Tidal.playlist(videoid)
         except:
             return await mystic.edit_text(_["play_3"])
-        spotify = False
+        spotify = True  # MusicTrack dicts from API-2; not YouTube video IDs
     elif ptype == "jiosaavnplay":
         if not config.API_URL2 or not config.API_KEY2:
             return await mystic.edit_text("❌ JioSaavn requires API_URL2 & API_KEY2.")
@@ -824,7 +836,7 @@ async def play_playlists_command(client, CallbackQuery, _):
             result, _ = await JioSaavn.playlist(videoid)
         except:
             return await mystic.edit_text(_["play_3"])
-        spotify = False
+        spotify = True  # MusicTrack dicts from API-2; not YouTube video IDs
     else:
         return await mystic.edit_text(_["play_3"])
     try:
