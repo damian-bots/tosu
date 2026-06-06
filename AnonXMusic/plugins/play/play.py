@@ -8,7 +8,7 @@ from pytgcalls.exceptions import NoActiveGroupCall
 
 import config
 from AnonXMusic import (
-    Apple, Deezer, Gaana, JioSaavn, Kick, MXPlayer,
+    Apple, Deezer, DirectMedia, Gaana, JioSaavn, Kick, MXPlayer,
     Resso, SoundCloud, Spotify, Telegram, Tidal, Twitch, YouTube, app,
 )
 from AnonXMusic.core.call import Anony
@@ -496,12 +496,33 @@ async def play_commnd(
             img = details.get("thumb") or config.MXPLAYER_IMG_URL
             cap = _["play_10"].format(details["title"], details["duration_min"])
 
+        elif DirectMedia.is_valid(url):
+            # --- Direct HTTP/HTTPS media URL or M3U8/HLS stream ---
+            # Uses the existing "index" streamtype which passes raw URLs
+            # directly to pytgcalls/ffmpeg without any download step.
+            await mystic.edit_text(_["raw_1"])
+            dm_info = await DirectMedia.get_info(url)
+            if not dm_info:
+                return await mystic.edit_text(_["raw_2"])
+            # "index" streamtype in stream.py expects `details` to be the
+            # raw URL string (passed as `result`), not a dict.
+            details = url
+            streamtype = "index"
+            img = config.STREAM_IMG_URL if hasattr(config, "STREAM_IMG_URL") else config.YOUTUBE_IMG_URL
+            cap = _["raw_3"].format(
+                dm_info["title"],
+                "M3U8 / Live Stream" if dm_info["is_live"] else "Direct Media",
+                dm_info["duration_min"] or "Live",
+            )
+            # For duration-limit check we need a fake details dict — set it
+            # after the stream call so we skip the duration check for index URLs.
+            track_id = url
         else:
             return await mystic.edit_text(
-                "❌ <b>Link Type Not Supported</b>\n\n"
-                "Streaming from <b>Raw Links & M3U8 URLs</b> is currently disabled for security reasons.\n\n"
-                "✅ Please use <b>YouTube, Spotify, Apple Music, Deezer, Tidal, JioSaavn, "
-                "SoundCloud, Gaana, Twitch, Kick, MX Player, or Telegram files</b>."
+                "❌ <b>Link Not Supported</b>\n\n"
+                "Could not identify this URL as a valid media source.\n"
+                "Supported: YouTube, Spotify, Apple Music, Deezer, Tidal, JioSaavn, "
+                "SoundCloud, Gaana, Twitch, Kick, MX Player, Telegram files, M3U8/Direct URLs."
             )
 
     else:
@@ -523,25 +544,27 @@ async def play_commnd(
 
     if str(playmode) == "Direct":
         if not plist_type:
-            if details["duration_min"]:
-                duration_sec = time_to_seconds(details["duration_min"])
-                if duration_sec > config.DURATION_LIMIT:
-                    return await mystic.edit_text(
-                        _["play_6"].format(config.DURATION_LIMIT_MIN, app.mention)
+            # For index/direct-link streamtypes details is a raw URL string; skip dict checks.
+            if streamtype not in ("index", "direct_link", "live_stream"):
+                if details["duration_min"]:
+                    duration_sec = time_to_seconds(details["duration_min"])
+                    if duration_sec > config.DURATION_LIMIT:
+                        return await mystic.edit_text(
+                            _["play_6"].format(config.DURATION_LIMIT_MIN, app.mention)
+                        )
+                else:
+                    buttons = livestream_markup(
+                        _,
+                        track_id,
+                        user_id,
+                        "v" if video else "a",
+                        "c" if channel else "g",
+                        "f" if fplay else "d",
                     )
-            else:
-                buttons = livestream_markup(
-                    _,
-                    track_id,
-                    user_id,
-                    "v" if video else "a",
-                    "c" if channel else "g",
-                    "f" if fplay else "d",
-                )
-                return await mystic.edit_text(
-                    _["play_13"],
-                    reply_markup=InlineKeyboardMarkup(buttons),
-                )
+                    return await mystic.edit_text(
+                        _["play_13"],
+                        reply_markup=InlineKeyboardMarkup(buttons),
+                    )
         try:
             await stream(
                 _,

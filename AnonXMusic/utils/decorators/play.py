@@ -13,6 +13,7 @@ from AnonXMusic import YouTube, app
 from AnonXMusic.misc import SUDOERS
 from AnonXMusic.utils.database import (
     get_assistant,
+    get_authuser_names,
     get_cmode,
     get_lang,
     get_playmode,
@@ -26,17 +27,21 @@ from strings import get_string
 
 links = {}
 
+# Commands that require admin / auth-user access regardless of playtype setting
+_FORCE_COMMANDS = {"playforce", "vplayforce", "cplayforce", "cvplayforce"}
+
 
 def PlayWrapper(command):
     async def wrapper(client, message):
         language = await get_lang(message.chat.id)
         _ = get_string(language)
+
         if message.sender_chat:
             upl = InlineKeyboardMarkup(
                 [
                     [
                         InlineKeyboardButton(
-                            text="ʜᴏᴡ ᴛᴏ ғɪx ?",
+                            text="How To Fix ?",
                             callback_data="AnonymousAdmin",
                         ),
                     ]
@@ -47,13 +52,16 @@ def PlayWrapper(command):
         if await is_maintenance() is False:
             if message.from_user.id not in SUDOERS:
                 return await message.reply_text(
-                    text=f"{app.mention} ɪs ᴜɴᴅᴇʀ ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ, ᴠɪsɪᴛ <a href={SUPPORT_CHAT}>sᴜᴘᴘᴏʀᴛ ᴄʜᴀᴛ</a> ғᴏʀ ᴋɴᴏᴡɪɴɢ ᴛʜᴇ ʀᴇᴀsᴏɴ.",
+                    text=(
+                        f"{app.mention} is under maintenance, visit "
+                        f"<a href={SUPPORT_CHAT}>support chat</a> for knowing the reason."
+                    ),
                     disable_web_page_preview=True,
                 )
 
         try:
             await message.delete()
-        except:
+        except Exception:
             pass
 
         audio_telegram = (
@@ -77,28 +85,47 @@ def PlayWrapper(command):
                     caption=_["play_18"],
                     reply_markup=InlineKeyboardMarkup(buttons),
                 )
+
         if message.command[0][0] == "c":
             chat_id = await get_cmode(message.chat.id)
             if chat_id is None:
                 return await message.reply_text(_["setting_7"])
             try:
                 chat = await app.get_chat(chat_id)
-            except:
+            except Exception:
                 return await message.reply_text(_["cplay_4"])
             channel = chat.title
         else:
             chat_id = message.chat.id
             channel = None
+
         playmode = await get_playmode(message.chat.id)
         playty = await get_playtype(message.chat.id)
-        if playty != "Everyone":
+
+        # --- Force-play commands: always admin / auth-user only ---
+        cmd = message.command[0].lower()
+        if cmd in _FORCE_COMMANDS:
             if message.from_user.id not in SUDOERS:
                 admins = adminlist.get(message.chat.id)
-                if not admins:
-                    return await message.reply_text(_["admin_13"])
-                else:
-                    if message.from_user.id not in admins:
+                if not admins or message.from_user.id not in admins:
+                    # Also allow authorized users
+                    try:
+                        auth_users_dict = await get_authuser_names(message.chat.id)
+                        auth_ids = [int(uid) for uid in auth_users_dict.keys()]
+                    except Exception:
+                        auth_ids = []
+                    if message.from_user.id not in auth_ids:
+                        return await message.reply_text(_["raw_4"])
+        else:
+            # Normal play commands — respect playtype setting
+            if playty != "Everyone":
+                if message.from_user.id not in SUDOERS:
+                    admins = adminlist.get(message.chat.id)
+                    if not admins:
+                        return await message.reply_text(_["admin_13"])
+                    elif message.from_user.id not in admins:
                         return await message.reply_text(_["play_4"])
+
         if message.command[0][0] == "v":
             video = True
         else:
@@ -106,6 +133,7 @@ def PlayWrapper(command):
                 video = True
             else:
                 video = True if message.command[0][1] == "v" else None
+
         if message.command[0][-1] == "e":
             if not await is_active_chat(chat_id):
                 return await message.reply_text(_["play_16"])
@@ -137,7 +165,7 @@ def PlayWrapper(command):
                         invitelink = message.chat.username
                         try:
                             await userbot.resolve_peer(invitelink)
-                        except:
+                        except Exception:
                             pass
                     else:
                         try:
@@ -177,7 +205,7 @@ def PlayWrapper(command):
 
                 try:
                     await userbot.resolve_peer(chat_id)
-                except:
+                except Exception:
                     pass
 
         return await command(

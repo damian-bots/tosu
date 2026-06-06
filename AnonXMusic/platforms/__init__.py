@@ -2,6 +2,7 @@ from .Apple import AppleAPI
 from .Api import ApiPlatform
 from .Carbon import CarbonAPI
 from .Deezer import DeezerAPI
+from .DirectMedia import DirectMediaAPI
 from .Gaana import GaanaAPI
 from .JioSaavn import JioSaavnAPI
 from .Kick import KickAPI
