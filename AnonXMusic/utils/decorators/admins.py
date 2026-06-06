@@ -13,6 +13,7 @@ from AnonXMusic.utils.database import (
     is_nonadmin_chat,
     is_skipmode,
 )
+from AnonXMusic.utils.helpers import get_anonymous_admin_markup
 from config import SUPPORT_CHAT, adminlist, confirmer
 from strings import get_string
 
@@ -41,17 +42,9 @@ def AdminRightsCheck(mystic):
             LOGGER(__name__).debug(f"Language lookup failed, defaulting to en: {e}")
             _ = get_string("en")
         if message.sender_chat:
-            upl = InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            text="ʜᴏᴡ ᴛᴏ ғɪx ?",
-                            callback_data="AnonymousAdmin",
-                        ),
-                    ]
-                ]
+            return await message.reply_text(
+                _["general_3"], reply_markup=get_anonymous_admin_markup()
             )
-            return await message.reply_text(_["general_3"], reply_markup=upl)
         if message.command[0][0] == "c":
             chat_id = await get_cmode(message.chat.id)
             if chat_id is None:
@@ -139,17 +132,9 @@ def AdminActual(mystic):
             LOGGER(__name__).debug(f"AdminActual language lookup failed, defaulting to en: {e}")
             _ = get_string("en")
         if message.sender_chat:
-            upl = InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            text="ʜᴏᴡ ᴛᴏ ғɪx ?",
-                            callback_data="AnonymousAdmin",
-                        ),
-                    ]
-                ]
+            return await message.reply_text(
+                _["general_3"], reply_markup=get_anonymous_admin_markup()
             )
-            return await message.reply_text(_["general_3"], reply_markup=upl)
         if message.from_user.id not in SUDOERS:
             try:
                 member = (
