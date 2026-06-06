@@ -28,11 +28,8 @@ MEDIA_CHANNEL_ID = int(getenv("MEDIA_CHANNEL_ID"))
 API_URL = getenv("API_URL", "https://api.arcmusic.fun")
 API_KEY = getenv("API_KEY")
 
-# API-2: Used for Spotify, Apple Music, Deezer, SoundCloud, Gaana, Tidal,
-#         MX Player, Twitch, Kick and all other non-YouTube platforms.
-#         Get your credentials from the same provider as API_KEY.
-API_URL2 = getenv("API_URL2", "")
-API_KEY2 = getenv("API_KEY2", "")
+API_URL2 = getenv("API_URL2", "https://api.onegrab.fun")
+API_KEY2 = getenv("API_KEY2", "eb96ab_tRZkz48isy9Kw7F0d1XqnIhXAuoln6QX")
 
 # Get this value from @FallenxBot on Telegram by /id
 OWNER_ID = 603536072
@@ -85,7 +82,7 @@ ENABLE_APPLE      = _bool("ENABLE_APPLE",      True)
 ENABLE_SOUNDCLOUD = _bool("ENABLE_SOUNDCLOUD", True)
 ENABLE_DEEZER     = _bool("ENABLE_DEEZER",     True)
 ENABLE_GAANA      = _bool("ENABLE_GAANA",      True)
-ENABLE_TIDAL      = _bool("ENABLE_TIDAL",      True)
+ENABLE_TIDAL      = _bool("ENABLE_TIDAL",      False)
 ENABLE_JIOSAAVN   = _bool("ENABLE_JIOSAAVN",   True)
 ENABLE_TWITCH     = _bool("ENABLE_TWITCH",     True)
 ENABLE_KICK       = _bool("ENABLE_KICK",       True)
@@ -130,14 +127,14 @@ YOUTUBE_IMG_URL = "https://files.catbox.moe/viv1hy.jpg"
 SPOTIFY_ARTIST_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
 SPOTIFY_ALBUM_IMG_URL = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
 SPOTIFY_PLAYLIST_IMG_URL = "https://files.catbox.moe/viv1hy.jpg"
-APPLE_IMG_URL = getenv("APPLE_IMG_URL", "https://i.imgur.com/WwdKBdK.jpg")
-DEEZER_IMG_URL = getenv("DEEZER_IMG_URL", "https://i.imgur.com/3YKSmFg.jpg")
-TIDAL_IMG_URL = getenv("TIDAL_IMG_URL", "https://i.imgur.com/1nqObLk.jpg")
-GAANA_IMG_URL = getenv("GAANA_IMG_URL", "https://i.imgur.com/Z7DKHTG.jpg")
-JIOSAAVN_IMG_URL = getenv("JIOSAAVN_IMG_URL", "https://i.imgur.com/wTJ3GRt.jpg")
-TWITCH_IMG_URL = getenv("TWITCH_IMG_URL", "https://i.imgur.com/Qn1fBaJ.jpg")
-KICK_IMG_URL = getenv("KICK_IMG_URL", "https://i.imgur.com/8Vu5YWv.jpg")
-MXPLAYER_IMG_URL = getenv("MXPLAYER_IMG_URL", "https://i.imgur.com/5b3Q2sX.jpg")
+APPLE_IMG_URL = getenv("APPLE_IMG_URL", "https://graph.org/file/e528bda04666ba055b7dc-4e329c61fb4c76075e.jpg")
+DEEZER_IMG_URL = getenv("DEEZER_IMG_URL", "https://graph.org/file/7cd62e72a920f16d8fda3-732e322c7ae578639b.jpg")
+TIDAL_IMG_URL = getenv("TIDAL_IMG_URL", "https://graph.org/file/16ece0c0a5ce175e59d82-61ce1455217b67a6fb.jpg")
+GAANA_IMG_URL = getenv("GAANA_IMG_URL", "https://graph.org/file/d8e84b377613036662aaf-706e3522833f0c8362.jpg")
+JIOSAAVN_IMG_URL = getenv("JIOSAAVN_IMG_URL", "https://graph.org/file/4b8567ce6ea17529e46c7-847417c56f94a0eb7d.jpg")
+TWITCH_IMG_URL = getenv("TWITCH_IMG_URL", "https://graph.org/file/3a29b6bdfe13d14e60631-dbb00927f3a06b2da5.jpg")
+KICK_IMG_URL = getenv("KICK_IMG_URL", "https://graph.org/file/585897ed58476ed81961b-c1654b83be3f910e58.jpg")
+MXPLAYER_IMG_URL = getenv("MXPLAYER_IMG_URL", "https://graph.org/file/87de6205beb117608dea4-103175004f7191f9d2.jpg")
 
 
 def time_to_seconds(time):
