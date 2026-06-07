@@ -443,10 +443,7 @@ class ApiPlatform:
             })
         return tracks
 
-<<<<<<< Updated upstream
-=======
     @error_logger(label="API Playlist Fetch")
->>>>>>> Stashed changes
     async def playlist(self, url: str) -> Optional[tuple[list[dict], str]]:
         """
         Returns (list_of_MusicTrack_dicts, playlist_id).
