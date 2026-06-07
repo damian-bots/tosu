@@ -5,7 +5,6 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 import config
 from AnonXMusic import app
 
-
 _PRIVACY_TEXT = """
 <b>Privacy Policy</b>
 
@@ -33,7 +32,6 @@ All communication runs over Telegram's encrypted infrastructure. We do not store
 <b>Contact</b>
 For questions or data removal requests, reach us via the support chat below.
 """
-
 
 @app.on_message(filters.command("privacy"))
 async def privacy(_, message: Message):
