@@ -28,7 +28,7 @@ META_Y = TITLE_Y + 45
 BAR_Y = META_Y + 50
 
 # Branding
-BRAND_TEXT = "Powered By Team Arc"
+BRAND_TEXT = "Team Arc"
 BRAND_Y = PANEL_Y + PANEL_H - 50
 
 MAX_TITLE_WIDTH = 700
