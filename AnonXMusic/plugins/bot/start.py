@@ -5,8 +5,6 @@ from pyrogram.enums import ChatType
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from youtubesearchpython.__future__ import VideosSearch
 
-import inspect
-
 import config
 from AnonXMusic import app
 from AnonXMusic.misc import _boot_
@@ -24,11 +22,6 @@ from AnonXMusic.utils.formatters import get_readable_time
 from AnonXMusic.utils.inline import help_pannel, private_panel, start_panel
 from config import BANNED_USERS
 from strings import get_string
-
-# Detect once at startup whether this Pyrogram build supports message effects.
-_EFFECT_SUPPORTED = "effect_id" in inspect.signature(
-    __import__("pyrogram").types.Message.reply_photo
-).parameters
 
 @app.on_message(filters.command("start") & filters.private & ~BANNED_USERS)
 @LanguageStart
@@ -97,14 +90,11 @@ async def start_pm(client, message: Message, _):
                 )
             return
 
-    _start_kwargs = dict(
+    await message.reply_photo(
         photo=config.START_IMG_URL,
         caption=_["start_2"].format(message.from_user.mention, app.mention),
         reply_markup=InlineKeyboardMarkup(private_panel(_)),
     )
-    if _EFFECT_SUPPORTED:
-        _start_kwargs["effect_id"] = 5159385139981059251
-    await message.reply_photo(**_start_kwargs)
     if await is_on_off(2):
         await app.send_message(
             chat_id=config.LOGGER_ID,
@@ -119,12 +109,13 @@ async def start_pm(client, message: Message, _):
 @LanguageStart
 async def start_gp(client, message: Message, _):
     uptime = int(time.time() - _boot_)
-    await message.reply_text(
-        _["start_1"].format(app.mention, get_readable_time(uptime)),
+    await message.reply_photo(
+        photo=config.START_IMG_URL,
+        caption=_["start_1"].format(app.mention, get_readable_time(uptime)),
         reply_markup=InlineKeyboardMarkup(start_panel(_)),
-        disable_web_page_preview=True,
     )
     await add_served_chat(message.chat.id)
+
 @app.on_message(filters.new_chat_members, group=-1)
 async def welcome(client, message: Message):
     for member in message.new_chat_members:
