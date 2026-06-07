@@ -6,7 +6,7 @@ import json
 import glob
 import random
 import logging
-from typing import Union, Dict, Optional, Any
+from typing import Union, Optional
 from pathlib import Path
 from urllib.parse import urlparse, unquote, quote
 
@@ -47,36 +47,8 @@ PROCESS_TIMEOUT = 80
 
 TG_FLOOD_COOLDOWN = 0.0
 
-DOWNLOAD_STATS: Dict[str, int] = {
-    "total": 0, "success": 0, "failed": 0,
-    "success_audio": 0, "success_video": 0,
-    "failed_audio": 0, "failed_video": 0,
-    "search_total": 0, "search_success": 0, "search_failed": 0,
-    "hard_fail_401": 0, "hard_fail_403": 0,
-    "api_fail_other_4xx": 0, "api_fail_5xx": 0, "network_fail": 0, "timeout_fail": 0,
-    "no_candidate": 0, "tg_fail": 0, "tg_flood_skip": 0, "cdn_fail": 0,
-    "hard_cycle_retries": 0, "media_db_hit": 0, "media_db_miss": 0, "media_db_fail": 0,
-    "ytdlp_fallback": 0,
-}
-
-def get_download_stats() -> Dict[str, Any]:
-    stats = dict(DOWNLOAD_STATS)
-    a_tot = stats["success_audio"] + stats["failed_audio"]
-    stats["audio_success_rate"] = f"{round((stats['success_audio'] / a_tot) * 100, 2)}%" if a_tot > 0 else "0%"
-    v_tot = stats["success_video"] + stats["failed_video"]
-    stats["video_success_rate"] = f"{round((stats['success_video'] / v_tot) * 100, 2)}%" if v_tot > 0 else "0%"
-    dl_tot = stats["success"] + stats["failed"]
-    stats["download_success_rate"] = f"{round((stats['success'] / dl_tot) * 100, 2)}%" if dl_tot > 0 else "0%"
-    s_tot = stats["search_total"]
-    stats["search_success_rate"] = f"{round((stats['search_success'] / s_tot) * 100, 2)}%" if s_tot > 0 else "0%"
-    return stats
-
-def reset_download_stats() -> None:
-    for k in list(DOWNLOAD_STATS.keys()):
-        DOWNLOAD_STATS[k] = 0
-
 def _inc(key: str, n: int = 1) -> None:
-    DOWNLOAD_STATS[key] = DOWNLOAD_STATS.get(key, 0) + n
+    pass  # download stats tracking removed; use /usage for API usage stats
 
 _session: Optional[aiohttp.ClientSession] = None
 _session_lock = asyncio.Lock()
@@ -1130,7 +1102,10 @@ class YouTubeAPI:
         format_id: Union[bool, str] = None,
         title: Union[bool, str] = None,
     ) -> Union[str, tuple]:
-
+        """
+        Download a YouTube track via API-1 (optimized_download) only.
+        yt-dlp fallback has been removed — if API-1 fails the download fails.
+        """
         _inc("total")
         is_video = bool(video or songvideo)
 
@@ -1142,7 +1117,6 @@ class YouTubeAPI:
         link = str(link)
         if videoid:
             link = self.base + link
-        title_str = str(title) if title else "Unknown_Track"
 
         if not is_safe_url(link):
             _inc("failed")
@@ -1152,133 +1126,21 @@ class YouTubeAPI:
         if "&" in link:
             link = link.split("&")[0]
 
-        loop = asyncio.get_running_loop()
-
         try:
             optimized_path = await asyncio.wait_for(
                 optimized_download(link, is_video), timeout=PROCESS_TIMEOUT
             )
             if optimized_path and os.path.exists(optimized_path):
+                _inc("success")
+                _inc("success_video" if is_video else "success_audio")
                 return optimized_path if (songvideo or songaudio) else (optimized_path, True)
         except asyncio.TimeoutError:
-            LOGGER.warning(f"Optimized download timed out: {link}")
+            LOGGER.error(f"API-1 download timed out: {link}")
         except Exception as e:
-            LOGGER.error(f"Optimized download error: {e}")
+            LOGGER.error(f"API-1 download error: {e}")
 
-        LOGGER.info(f"yt-dlp fallback › {link}")
-
-        def song_video_dl():
-            fpath = f"downloads/{title_str}"
-            yt_dlp.YoutubeDL({
-                "format": f"{format_id}+140", "outtmpl": fpath,
-                "geo_bypass": True, "nocheckcertificate": True,
-                "quiet": True, "no_warnings": True,
-                "cookiefile": cookie_txt_file(), "prefer_ffmpeg": True,
-                "merge_output_format": "mp4",
-            }).download([link])
-
-        def song_audio_dl():
-            fpath = f"downloads/{title_str}.%(ext)s"
-            yt_dlp.YoutubeDL({
-                "format": format_id, "outtmpl": fpath,
-                "geo_bypass": True, "nocheckcertificate": True,
-                "quiet": True, "no_warnings": True,
-                "cookiefile": cookie_txt_file(), "prefer_ffmpeg": True,
-                "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
-            }).download([link])
-
-        def audio_dl():
-            ydl = yt_dlp.YoutubeDL({
-                "format": "bestaudio/best", "outtmpl": "downloads/%(id)s.%(ext)s",
-                "geo_bypass": True, "nocheckcertificate": True,
-                "quiet": True, "cookiefile": cookie_txt_file(), "no_warnings": True,
-            })
-            info = ydl.extract_info(link, False)
-            xyz = os.path.join("downloads", f"{info['id']}.{info.get('ext', 'm4a')}")
-            if os.path.exists(xyz):
-                return xyz
-            ydl.download([link])
-            return xyz
-
-        def video_dl():
-            ydl = yt_dlp.YoutubeDL({
-                "format": "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])",
-                "outtmpl": "downloads/%(id)s.%(ext)s",
-                "geo_bypass": True, "nocheckcertificate": True,
-                "quiet": True, "cookiefile": cookie_txt_file(), "no_warnings": True,
-            })
-            info = ydl.extract_info(link, False)
-            xyz = os.path.join("downloads", f"{info['id']}.{info.get('ext', 'mp4')}")
-            if os.path.exists(xyz):
-                return xyz
-            ydl.download([link])
-            return xyz
-
-        try:
-            if songvideo:
-                await asyncio.wait_for(loop.run_in_executor(None, song_video_dl), timeout=PROCESS_TIMEOUT)
-                _inc("success"); _inc("success_video")
-                fpath = f"downloads/{title_str}.mp4"
-                return fpath
-
-            if songaudio:
-                await asyncio.wait_for(loop.run_in_executor(None, song_audio_dl), timeout=PROCESS_TIMEOUT)
-                _inc("success"); _inc("success_audio")
-                fpath = f"downloads/{title_str}.mp3"
-                return fpath
-
-            if video:
-                if await is_on_off(1):
-                    direct = True
-                    downloaded_file = await asyncio.wait_for(
-                        loop.run_in_executor(None, video_dl), timeout=PROCESS_TIMEOUT
-                    )
-                else:
-                    proc = await asyncio.create_subprocess_exec(
-                        "yt-dlp", "--cookies", cookie_txt_file(),
-                        "-g", "-f", "best[height<=?720][width<=?1280]", link,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    try:
-                        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=PROCESS_TIMEOUT)
-                    except asyncio.TimeoutError:
-                        proc.kill()
-                        raise Exception("yt-dlp subprocess timed out")
-                    if stdout:
-                        downloaded_file = stdout.decode().split("\n")[0]
-                        direct = False
-                    else:
-                        file_size = await check_file_size(link)
-                        if not file_size:
-                            _inc("failed"); _inc("failed_video")
-                            return None, False
-                        if file_size / (1024 * 1024) > 250:
-                            LOGGER.error(f"File too large ({file_size / (1024*1024):.0f} MB): {link}")
-                            _inc("failed"); _inc("failed_video")
-                            return None, False
-                        direct = True
-                        downloaded_file = await asyncio.wait_for(
-                            loop.run_in_executor(None, video_dl), timeout=PROCESS_TIMEOUT
-                        )
-                _inc("success"); _inc("success_video")
-            else:
-                direct = True
-                downloaded_file = await asyncio.wait_for(
-                    loop.run_in_executor(None, audio_dl), timeout=PROCESS_TIMEOUT
-                )
-                _inc("success"); _inc("success_audio")
-
-            return downloaded_file, direct
-
-        except asyncio.TimeoutError:
-            LOGGER.error(f"yt-dlp timed out: {link}")
-            _inc("failed")
-            _inc("failed_video" if is_video else "failed_audio")
-            return None if (songvideo or songaudio) else (None, False)
-
-        except Exception as e:
-            LOGGER.error(f"yt-dlp failed: {e}")
-            _inc("failed")
-            _inc("failed_video" if is_video else "failed_audio")
-            return None if (songvideo or songaudio) else (None, False)
+        # API-1 failed — report failure, no yt-dlp fallback
+        LOGGER.warning(f"YouTube download failed (API-1 only mode): {link}")
+        _inc("failed")
+        _inc("failed_video" if is_video else "failed_audio")
+        return None if (songvideo or songaudio) else (None, False)

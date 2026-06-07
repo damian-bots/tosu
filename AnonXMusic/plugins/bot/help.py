@@ -1,3 +1,4 @@
+import inspect
 from typing import Union
 
 from pyrogram import filters, types
@@ -10,6 +11,11 @@ from AnonXMusic.utils.decorators.language import LanguageStart, languageCB
 from AnonXMusic.utils.inline.help import help_back_markup, private_help_panel
 from config import BANNED_USERS, START_IMG_URL, SUPPORT_CHAT
 from strings import get_string, helpers
+
+# Detect once at startup whether this Pyrogram build supports message effects.
+_EFFECT_SUPPORTED = "effect_id" in inspect.signature(
+    __import__("pyrogram").types.Message.reply_photo
+).parameters
 
 
 @app.on_message(filters.command(["help"]) & filters.private & ~BANNED_USERS)
@@ -38,12 +44,14 @@ async def helper_private(
         language = await get_lang(update.chat.id)
         _ = get_string(language)
         keyboard = help_pannel(_)
-        await update.reply_photo(
+        _help_kwargs = dict(
             photo=START_IMG_URL,
             caption=_["help_1"].format(SUPPORT_CHAT),
-            effect_id=5159385139981059251,
             reply_markup=keyboard,
         )
+        if _EFFECT_SUPPORTED:
+            _help_kwargs["effect_id"] = 5159385139981059251
+        await update.reply_photo(**_help_kwargs)
 
 
 @app.on_message(filters.command(["help"]) & filters.group & ~BANNED_USERS)

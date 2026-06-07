@@ -5,6 +5,8 @@ from pyrogram.enums import ChatType
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from youtubesearchpython.__future__ import VideosSearch
 
+import inspect
+
 import config
 from AnonXMusic import app
 from AnonXMusic.misc import _boot_
@@ -22,6 +24,11 @@ from AnonXMusic.utils.formatters import get_readable_time
 from AnonXMusic.utils.inline import help_pannel, private_panel, start_panel
 from config import BANNED_USERS
 from strings import get_string
+
+# Detect once at startup whether this Pyrogram build supports message effects.
+_EFFECT_SUPPORTED = "effect_id" in inspect.signature(
+    __import__("pyrogram").types.Message.reply_photo
+).parameters
 
 @app.on_message(filters.command("start") & filters.private & ~BANNED_USERS)
 @LanguageStart
@@ -90,12 +97,14 @@ async def start_pm(client, message: Message, _):
                 )
             return
 
-    await message.reply_photo(
+    _start_kwargs = dict(
         photo=config.START_IMG_URL,
         caption=_["start_2"].format(message.from_user.mention, app.mention),
         reply_markup=InlineKeyboardMarkup(private_panel(_)),
-        effect_id=5159385139981059251,
     )
+    if _EFFECT_SUPPORTED:
+        _start_kwargs["effect_id"] = 5159385139981059251
+    await message.reply_photo(**_start_kwargs)
     if await is_on_off(2):
         await app.send_message(
             chat_id=config.LOGGER_ID,
