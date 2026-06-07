@@ -30,7 +30,7 @@ API_KEY = getenv("API_KEY")       # Required
 
 API_URL2 = getenv("API_URL2", "https://api.onegrab.fun")
 API_KEY2 = getenv("API_KEY2")
-=======
+
 # ── API-2 (OneGrab) ───────────────────────────────────────────────────────────
 API_URL2 = getenv("API_URL2", "https://api.onegrab.fun")
 API_KEY2 = getenv("API_KEY2")     # Required
@@ -116,7 +116,8 @@ YOUTUBE_IMG_URL     = "https://files.catbox.moe/viv1hy.jpg"
 SPOTIFY_ARTIST_IMG_URL   = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
 SPOTIFY_ALBUM_IMG_URL    = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
 SPOTIFY_PLAYLIST_IMG_URL = "https://files.catbox.moe/viv1hy.jpg"
-<<<<<<< Updated upstream
+
+
 APPLE_IMG_URL = getenv("APPLE_IMG_URL", "https://graph.org/file/e528bda04666ba055b7dc-4e329c61fb4c76075e.jpg")
 DEEZER_IMG_URL = getenv("DEEZER_IMG_URL", "https://graph.org/file/7cd62e72a920f16d8fda3-732e322c7ae578639b.jpg")
 TIDAL_IMG_URL = getenv("TIDAL_IMG_URL", "https://graph.org/file/16ece0c0a5ce175e59d82-61ce1455217b67a6fb.jpg")
@@ -124,7 +125,6 @@ GAANA_IMG_URL = getenv("GAANA_IMG_URL", "https://graph.org/file/d8e84b3776130366
 JIOSAAVN_IMG_URL = getenv("JIOSAAVN_IMG_URL", "https://graph.org/file/4b8567ce6ea17529e46c7-847417c56f94a0eb7d.jpg")
 TWITCH_IMG_URL = getenv("TWITCH_IMG_URL", "https://graph.org/file/3a29b6bdfe13d14e60631-dbb00927f3a06b2da5.jpg")
 KICK_IMG_URL = getenv("KICK_IMG_URL", "https://graph.org/file/585897ed58476ed81961b-c1654b83be3f910e58.jpg")
-=======
 APPLE_IMG_URL    = getenv("APPLE_IMG_URL",    "https://graph.org/file/e528bda04666ba055b7dc-4e329c61fb4c76075e.jpg")
 DEEZER_IMG_URL   = getenv("DEEZER_IMG_URL",   "https://graph.org/file/7cd62e72a920f16d8fda3-732e322c7ae578639b.jpg")
 TIDAL_IMG_URL    = getenv("TIDAL_IMG_URL",    "https://graph.org/file/16ece0c0a5ce175e59d82-61ce1455217b67a6fb.jpg")
@@ -132,7 +132,6 @@ GAANA_IMG_URL    = getenv("GAANA_IMG_URL",    "https://graph.org/file/d8e84b3776
 JIOSAAVN_IMG_URL = getenv("JIOSAAVN_IMG_URL", "https://graph.org/file/4b8567ce6ea17529e46c7-847417c56f94a0eb7d.jpg")
 TWITCH_IMG_URL   = getenv("TWITCH_IMG_URL",   "https://graph.org/file/3a29b6bdfe13d14e60631-dbb00927f3a06b2da5.jpg")
 KICK_IMG_URL     = getenv("KICK_IMG_URL",     "https://graph.org/file/585897ed58476ed81961b-c1654b83be3f910e58.jpg")
->>>>>>> Stashed changes
 MXPLAYER_IMG_URL = getenv("MXPLAYER_IMG_URL", "https://graph.org/file/87de6205beb117608dea4-103175004f7191f9d2.jpg")
 
 
