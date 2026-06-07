@@ -28,14 +28,12 @@ ERROR_LOG_ID     = int(getenv("ERROR_LOG_ID", "-1003640483183"))
 API_URL = getenv("API_URL", "https://api.arcmusic.fun")
 API_KEY = getenv("API_KEY")       # Required
 
-<<<<<<< Updated upstream
 API_URL2 = getenv("API_URL2", "https://api.onegrab.fun")
 API_KEY2 = getenv("API_KEY2")
 =======
 # ── API-2 (OneGrab) ───────────────────────────────────────────────────────────
 API_URL2 = getenv("API_URL2", "https://api.onegrab.fun")
 API_KEY2 = getenv("API_KEY2")     # Required
->>>>>>> Stashed changes
 
 # ── Owner ─────────────────────────────────────────────────────────────────────
 OWNER_ID = 603536072
