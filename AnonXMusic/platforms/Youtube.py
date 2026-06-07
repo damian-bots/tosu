@@ -1,5 +1,3 @@
-# AnonXMusic/platforms/Youtube.py
-
 import time
 import asyncio
 import os
@@ -61,7 +59,6 @@ DOWNLOAD_STATS: Dict[str, int] = {
     "ytdlp_fallback": 0,
 }
 
-
 def get_download_stats() -> Dict[str, Any]:
     stats = dict(DOWNLOAD_STATS)
     a_tot = stats["success_audio"] + stats["failed_audio"]
@@ -74,20 +71,16 @@ def get_download_stats() -> Dict[str, Any]:
     stats["search_success_rate"] = f"{round((stats['search_success'] / s_tot) * 100, 2)}%" if s_tot > 0 else "0%"
     return stats
 
-
 def reset_download_stats() -> None:
     for k in list(DOWNLOAD_STATS.keys()):
         DOWNLOAD_STATS[k] = 0
 
-
 def _inc(key: str, n: int = 1) -> None:
     DOWNLOAD_STATS[key] = DOWNLOAD_STATS.get(key, 0) + n
-
 
 _session: Optional[aiohttp.ClientSession] = None
 _session_lock = asyncio.Lock()
 _MONGO_CLIENT: Optional[AsyncIOMotorClient] = None
-
 
 def cookie_txt_file() -> str:
     folder_path = os.path.join(os.getcwd(), "cookies")
@@ -103,7 +96,6 @@ def cookie_txt_file() -> str:
         pass
     return f"cookies/{os.path.basename(cookie_file)}"
 
-
 async def get_http_session() -> aiohttp.ClientSession:
     global _session
     if _session and not _session.closed:
@@ -116,7 +108,6 @@ async def get_http_session() -> aiohttp.ClientSession:
         _session = aiohttp.ClientSession(timeout=timeout, connector=connector)
         return _session
 
-
 def _get_media_collection():
     global _MONGO_CLIENT
     db_uri = config.DB_URI
@@ -126,7 +117,6 @@ def _get_media_collection():
         _MONGO_CLIENT = AsyncIOMotorClient(db_uri)
     return _MONGO_CLIENT[MEDIA_DB_NAME][MEDIA_COLLECTION_NAME]
 
-
 async def is_media(track_id: str, isVideo: bool = False) -> bool:
     col = _get_media_collection()
     if col is None:
@@ -135,7 +125,6 @@ async def is_media(track_id: str, isVideo: bool = False) -> bool:
         return bool(await col.find_one({"track_id": track_id, "isVideo": isVideo}, {"_id": 1}))
     except Exception:
         return False
-
 
 async def get_media_id(track_id: str, isVideo: bool = False) -> Optional[int]:
     col = _get_media_collection()
@@ -149,10 +138,8 @@ async def get_media_id(track_id: str, isVideo: bool = False) -> Optional[int]:
         pass
     return None
 
-
 def _ensure_dir(p: str) -> None:
     os.makedirs(p, exist_ok=True)
-
 
 def _resolve_if_dir(download_result: str) -> Optional[str]:
     if not download_result:
@@ -166,9 +153,6 @@ def _resolve_if_dir(download_result: str) -> Optional[str]:
             return None
         return str(max(files, key=lambda x: x.stat().st_mtime))
     return download_result
-
-
-# ── URL safety ────────────────────────────────────────────────────────────────
 
 def is_safe_url(text: str) -> bool:
     DANGEROUS_CHARS = [";", "|", "$", "`", "\n", "\r", "(", ")", "<", ">", "{", "}", "\\", "'", '"']
@@ -209,16 +193,12 @@ def is_safe_url(text: str) -> bool:
     except Exception:
         return False
 
-
-# ── YouTube ID helpers ────────────────────────────────────────────────────────
-
 YOUTUBE_REGEX = re.compile(
     r"(?:https?://)?(?:www\.|m\.|music\.)?"
     r"(?:youtube\.com/(?:watch\?v=|shorts/|playlist\?list=)|youtu\.be/)"
     r"([A-Za-z0-9_-]{11}|PL[A-Za-z0-9_-]+)(?:[&?][^\s]*)?"
 )
 YOUTUBE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
-
 
 def extract_video_id(link: str) -> str:
     if not link:
@@ -236,9 +216,6 @@ def extract_video_id(link: str) -> str:
     else:
         candidate = s.split("/")[-1].split("?")[0]
     return candidate if YOUTUBE_ID_RE.match(candidate) else ""
-
-
-# ── File size check ───────────────────────────────────────────────────────────
 
 async def check_file_size(link):
     if not link or not is_safe_url(str(link)):
@@ -262,9 +239,6 @@ async def check_file_size(link):
         return None
     formats = info.get("formats", [])
     return sum(f["filesize"] for f in formats if "filesize" in f) if formats else None
-
-
-# ── CDN download ──────────────────────────────────────────────────────────────
 
 async def _download_from_cdn(cdn_url: str, out_path: str) -> Optional[str]:
     if not cdn_url:
@@ -294,18 +268,10 @@ async def _download_from_cdn(cdn_url: str, out_path: str) -> Optional[str]:
                 await asyncio.sleep(CDN_RETRY_DELAY)
     return None
 
-
-# ── Media DB download ─────────────────────────────────────────────────────────
-
 async def _download_from_media_db(track_id: str, is_video: bool) -> Optional[str]:
     global TG_FLOOD_COOLDOWN
-<<<<<<< Updated upstream
-    db_uri = getattr(config, "MONGO_DB_URI", getattr(config, "DB_URI", None))
-    ch_id_str = getattr(config, "MEDIA_CHANNEL_ID", None)
-=======
     db_uri = config.DB_URI
     ch_id_str = config.MEDIA_CHANNEL_ID
->>>>>>> Stashed changes
     if not track_id or TG_APP is None or not db_uri or not ch_id_str:
         return None
     if time.time() < TG_FLOOD_COOLDOWN:
@@ -399,9 +365,6 @@ async def _download_from_media_db(track_id: str, is_video: bool) -> Optional[str
         _inc("media_db_fail")
         return None
 
-
-# ── V2 API helpers ────────────────────────────────────────────────────────────
-
 def _extract_candidate(obj: Any) -> Optional[str]:
     if obj is None:
         return None
@@ -430,7 +393,6 @@ def _extract_candidate(obj: Any) -> Optional[str]:
                     return c
     return None
 
-
 def _normalize_candidate_to_url(candidate: str, api_url: str) -> Optional[str]:
     if not candidate:
         return None
@@ -442,7 +404,6 @@ def _normalize_candidate_to_url(candidate: str, api_url: str) -> Optional[str]:
             return None
         return f"{api_url.rstrip('/')}{c}" if api_url else None
     return f"{api_url.rstrip('/')}/{c.lstrip('/')}" if api_url else None
-
 
 async def _v2_create_job(
     session: aiohttp.ClientSession,
@@ -471,7 +432,6 @@ async def _v2_create_job(
         except Exception:
             await asyncio.sleep(1)
     return None
-
 
 async def _v2_get_url(
     session: aiohttp.ClientSession,
@@ -510,7 +470,6 @@ async def _v2_get_url(
         await asyncio.sleep(3)
     return None
 
-
 async def _v2_save_file(
     session: aiohttp.ClientSession,
     url: str,
@@ -530,19 +489,12 @@ async def _v2_save_file(
         LOGGER.error(f"V2 save failed: {e}")
         return None
 
-
 async def v2_download(link: str, media_type: str) -> Optional[str]:
     if not link:
         return None
-<<<<<<< Updated upstream
-    api_url = getattr(config, "API_URL", None)
-    api_key = getattr(config, "API_KEY", None)
-    if not api_url or not api_key:
-=======
     api_url = config.API_URL
     api_key = config.API_KEY
     if not config.API_URL or not config.API_KEY:
->>>>>>> Stashed changes
         return None
 
     is_video = media_type == "video"
@@ -584,16 +536,12 @@ async def v2_download(link: str, media_type: str) -> Optional[str]:
 
     return None
 
-
-# ── Optimized download (DB → V2 API) ─────────────────────────────────────────
-
 async def optimized_download(link: str, is_video: bool) -> Optional[str]:
     if not link:
         return None
 
     vid = extract_video_id(str(link))
 
-    # 1. Media DB cache
     if vid:
         db_path = await _download_from_media_db(vid, is_video=is_video)
         if db_path and os.path.exists(db_path):
@@ -601,16 +549,9 @@ async def optimized_download(link: str, is_video: bool) -> Optional[str]:
             _inc("success_video" if is_video else "success_audio")
             return db_path
 
-    # 2. V2 API
-<<<<<<< Updated upstream
-    api_url = getattr(config, "API_URL", None)
-    api_key = getattr(config, "API_KEY", None)
-    if api_url and api_key:
-=======
     api_url = config.API_URL
     api_key = config.API_KEY
     if config.API_URL and config.API_KEY:
->>>>>>> Stashed changes
         v2_path = await v2_download(str(link), media_type="video" if is_video else "audio")
         if v2_path and os.path.exists(v2_path):
             _inc("success")
@@ -620,16 +561,11 @@ async def optimized_download(link: str, is_video: bool) -> Optional[str]:
 
     return None
 
-
-# ── YouTubeAPI class ──────────────────────────────────────────────────────────
-
 class YouTubeAPI:
     def __init__(self):
         self.base = "https://www.youtube.com/watch?v="
         self.listbase = "https://youtube.com/playlist?list="
         self.regex = YOUTUBE_REGEX
-
-    # ── Internal search scraper ───────────────────────────────────────────────
 
     async def fast_search(self, query: str, fetch_all: bool = False) -> Union[Dict[str, str], list, None]:
         if not query:
@@ -719,7 +655,6 @@ class YouTubeAPI:
             except Exception as e:
                 LOGGER.error(f"JSON parse error in fast_search: {e}")
 
-            # Regex fallback
             if not results_list:
                 video_ids = re.findall(r'"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"', html)
                 seen = set()
@@ -747,8 +682,6 @@ class YouTubeAPI:
         except Exception as e:
             LOGGER.error(f"fast_search failed: {e}")
             return None
-
-    # ── Public helpers ────────────────────────────────────────────────────────
 
     async def exists(self, link: str, videoid: Union[bool, str] = None) -> bool:
         if not link:
@@ -849,12 +782,6 @@ class YouTubeAPI:
                 if not is_safe_url(yturl):
                     raise Exception("Unsafe URL returned.")
 
-<<<<<<< Updated upstream
-                if not is_safe_url(yturl):
-                    raise Exception("Unsafe URL returned.")
-
-=======
->>>>>>> Stashed changes
                 duration_sec = 0 if str(duration_min) == "None" else int(time_to_seconds(duration_min))
                 await set_search_cache(link, {
                     "title": title, "duration": duration_min,
@@ -931,11 +858,7 @@ class YouTubeAPI:
         return "0:00"
 
     async def thumbnail(self, link: str, videoid: Union[bool, str] = None) -> str:
-<<<<<<< Updated upstream
-        fallback = getattr(config, "YOUTUBE_IMG_URL", "")
-=======
         fallback = config.YOUTUBE_IMG_URL
->>>>>>> Stashed changes
         if not link:
             return fallback
         link = str(link)
@@ -1079,11 +1002,7 @@ class YouTubeAPI:
                         duration_min = result.get("duration", "0:00")
                         vidid = result.get("id", "")
                         thumbs = result.get("thumbnails", [])
-<<<<<<< Updated upstream
-                        thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
-=======
                         thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else config.YOUTUBE_IMG_URL
->>>>>>> Stashed changes
 
                 if not is_safe_url(yturl):
                     raise Exception("Unsafe URL returned.")
@@ -1186,11 +1105,7 @@ class YouTubeAPI:
                 duration_min = result[query_type].get("duration", "0:00")
                 vidid = result[query_type].get("id", "")
                 thumbs = result[query_type].get("thumbnails", [])
-<<<<<<< Updated upstream
-                thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
-=======
                 thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else config.YOUTUBE_IMG_URL
->>>>>>> Stashed changes
                 _inc("search_success")
                 return title, duration_min, thumbnail, vidid
 
@@ -1198,21 +1113,10 @@ class YouTubeAPI:
                 last_error = e
                 if attempt < SEARCH_RETRIES - 1:
                     await asyncio.sleep(0.5)
-<<<<<<< Updated upstream
 
         LOGGER.error(f"slider() failed for {link}: {last_error}")
         _inc("search_failed")
         raise Exception(f"❌ Failed to load search options: {last_error}")
-
-    # ── Main download entry point ─────────────────────────────────────────────
-=======
->>>>>>> Stashed changes
-
-        LOGGER.error(f"slider() failed for {link}: {last_error}")
-        _inc("search_failed")
-        raise Exception(f"❌ Failed to load search options: {last_error}")
-
-    # ── Main download entry point ─────────────────────────────────────────────
 
     @error_logger(label="YouTube Download")
     async def download(
@@ -1250,7 +1154,6 @@ class YouTubeAPI:
 
         loop = asyncio.get_running_loop()
 
-        # ── 1. Optimized path (DB cache → V2 API) ────────────────────────────
         try:
             optimized_path = await asyncio.wait_for(
                 optimized_download(link, is_video), timeout=PROCESS_TIMEOUT
@@ -1262,7 +1165,6 @@ class YouTubeAPI:
         except Exception as e:
             LOGGER.error(f"Optimized download error: {e}")
 
-        # ── 2. yt-dlp fallback ────────────────────────────────────────────────
         LOGGER.info(f"yt-dlp fallback › {link}")
 
         def song_video_dl():
