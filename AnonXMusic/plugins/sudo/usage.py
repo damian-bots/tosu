@@ -6,7 +6,6 @@ from AnonXMusic import app
 from AnonXMusic.misc import SUDOERS
 from AnonXMusic.utils.database import get_api_usage
 
-
 @app.on_message(filters.command("usage") & SUDOERS)
 async def api_usage(_, message: Message):
     msg = await message.reply_text("Fetching usage stats...")
