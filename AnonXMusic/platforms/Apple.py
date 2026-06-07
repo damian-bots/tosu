@@ -39,7 +39,7 @@ class AppleAPI:
         return ApiPlatform()
 
     def _api_ready(self) -> bool:
-        return bool(getattr(config, "API_URL2", "") and getattr(config, "API_KEY2", ""))
+        return bool(config.API_URL2 and config.API_KEY2)
 
     # ── single track ───────────────────────────────────────────
     async def track(self, url: str, playid: Union[bool, str] = None):

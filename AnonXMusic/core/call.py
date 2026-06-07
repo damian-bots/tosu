@@ -18,6 +18,7 @@ from pytgcalls.types.stream import StreamAudioEnded
 
 import config
 from AnonXMusic import LOGGER, YouTube, app
+from AnonXMusic.utils.error_logger import error_logger
 
 
 async def _safe_tg_call(coro_fn, *args, retries: int = 4, base_delay: float = 3.0, **kwargs):
@@ -299,6 +300,7 @@ class Call(PyTgCalls):
         await asyncio.sleep(0.2)
         await assistant.leave_group_call(config.LOGGER_ID)
 
+    @error_logger(label="Assistant Join Call")
     async def join_call(
         self,
         chat_id: int,
@@ -348,6 +350,7 @@ class Call(PyTgCalls):
             if users == 1:
                 autoend[chat_id] = datetime.now() + timedelta(minutes=1)
 
+    @error_logger(label="Change Stream")
     async def change_stream(self, client, chat_id):
         check = db.get(chat_id)
         popped = None
@@ -635,6 +638,7 @@ class Call(PyTgCalls):
         @self.three.on_stream_end()
         @self.four.on_stream_end()
         @self.five.on_stream_end()
+        @error_logger(label="Stream End Handler")
         async def stream_end_handler1(client, update: Update):
             if not isinstance(update, StreamAudioEnded):
                 return

@@ -1,40 +1,49 @@
-from pyrogram import Client, filters
-from pyrogram.types import Message
+from pyrogram import filters
 from pyrogram.enums import ParseMode
-from AnonXMusic import app
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+
 import config
+from AnonXMusic import app
 
-TEXT = f"""
-🔒 **Privacy Policy for {app.mention}**
 
-We value your privacy and are committed to protecting your personal information when you use our Telegram voice chat player bot.
+_PRIVACY_TEXT = """
+<b>Privacy Policy</b>
 
-**What Data We Collect:**
-We do **not** collect or store any personal data such as your name, phone number, messages, or media. The bot only processes commands and streams audio as requested, using Telegram's secure infrastructure.
+{mention} is a Telegram voice chat music bot. This policy explains what data we handle and how.
 
-**How We Use Your Data:**
-Any data processed during your interaction with the bot (such as your commands or voice chat activity) remains confidential and is used solely to provide the requested services. We do **not** monitor, record, or log your conversations or actions.
+<b>Data we collect</b>
+We store only the minimum required to operate:
+- Chat IDs and user IDs, to serve the bot's features (language preferences, admin lists, play queues).
+- Play history, limited to what is needed for queue and loop functionality.
 
-**Data Sharing and Selling:**
-We respect your trust. We do **not** share, sell, or distribute any information to third parties, advertisers, or other organizations. Your data remains private and is never used for any unofficial purposes.
+We do <b>not</b> store message text, media, voice recordings, or any personal information beyond identifiers.
 
-**Security Measures:**
-Our bot operates within Telegram’s secure ecosystem, which employs end-to-end encryption for voice chats and messages. We take no additional steps to access or store your private data.
+<b>How data is used</b>
+Collected identifiers are used solely to provide bot functionality within Telegram. They are never sold, rented, or shared with any third party.
 
-**Your Control:**
-You maintain full control over your Telegram account and can revoke access or delete your data at any time by simply stopping the use of this bot or removing it from your chats.
+<b>Data retention</b>
+You can remove the bot from a chat at any time. Upon removal, associated chat data is no longer actively used. You may contact support to request deletion of stored data for your chat or account.
 
-**Updates to this Policy:**
-This privacy policy may be updated from time to time to reflect changes in practices or regulations. We encourage you to review this policy periodically.
+<b>Third-party services</b>
+The bot uses external APIs to resolve and stream audio (YouTube, Spotify, etc.). Those services have their own privacy policies; we do not control what they collect.
 
-**Contact Us:**
-If you have questions or concerns about your privacy or how we handle data, please reach out to our support team for assistance.
+<b>Security</b>
+All communication runs over Telegram's encrypted infrastructure. We do not store credentials or payment information.
 
-For more details, please visit our official Privacy Policy here: [Privacy Policy](https://telegra.ph/Privacy-Policy-Bot-Hub-12-18-2).
-
-Thank you for trusting {app.mention} with your Telegram voice chat experience. We are dedicated to providing a safe, secure, and private environment.
+<b>Contact</b>
+For questions or data removal requests, reach us via the support chat below.
 """
 
+
 @app.on_message(filters.command("privacy"))
-async def privacy(client, message: Message):
-    await message.reply_text(TEXT, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+async def privacy(_, message: Message):
+    text = _PRIVACY_TEXT.format(mention=app.mention).strip()
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("Support", url=config.SUPPORT_CHAT),
+    ]])
+    await message.reply_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True,
+        reply_markup=keyboard,
+    )

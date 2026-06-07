@@ -21,7 +21,8 @@ from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.__future__ import VideosSearch
 
-from AnonXMusic.utils.database import is_on_off, get_search_cache, set_search_cache
+from AnonXMusic.utils.database import is_on_off, get_search_cache, set_search_cache, increment_api_usage
+from AnonXMusic.utils.error_logger import error_logger
 from AnonXMusic.utils.formatters import time_to_seconds
 
 import config
@@ -298,8 +299,13 @@ async def _download_from_cdn(cdn_url: str, out_path: str) -> Optional[str]:
 
 async def _download_from_media_db(track_id: str, is_video: bool) -> Optional[str]:
     global TG_FLOOD_COOLDOWN
+<<<<<<< Updated upstream
     db_uri = getattr(config, "MONGO_DB_URI", getattr(config, "DB_URI", None))
     ch_id_str = getattr(config, "MEDIA_CHANNEL_ID", None)
+=======
+    db_uri = config.DB_URI
+    ch_id_str = config.MEDIA_CHANNEL_ID
+>>>>>>> Stashed changes
     if not track_id or TG_APP is None or not db_uri or not ch_id_str:
         return None
     if time.time() < TG_FLOOD_COOLDOWN:
@@ -528,9 +534,15 @@ async def _v2_save_file(
 async def v2_download(link: str, media_type: str) -> Optional[str]:
     if not link:
         return None
+<<<<<<< Updated upstream
     api_url = getattr(config, "API_URL", None)
     api_key = getattr(config, "API_KEY", None)
     if not api_url or not api_key:
+=======
+    api_url = config.API_URL
+    api_key = config.API_KEY
+    if not config.API_URL or not config.API_KEY:
+>>>>>>> Stashed changes
         return None
 
     is_video = media_type == "video"
@@ -567,6 +579,7 @@ async def v2_download(link: str, media_type: str) -> Optional[str]:
                 await asyncio.sleep(2)
             continue
 
+        await increment_api_usage("api_1")
         return fpath
 
     return None
@@ -589,9 +602,15 @@ async def optimized_download(link: str, is_video: bool) -> Optional[str]:
             return db_path
 
     # 2. V2 API
+<<<<<<< Updated upstream
     api_url = getattr(config, "API_URL", None)
     api_key = getattr(config, "API_KEY", None)
     if api_url and api_key:
+=======
+    api_url = config.API_URL
+    api_key = config.API_KEY
+    if config.API_URL and config.API_KEY:
+>>>>>>> Stashed changes
         v2_path = await v2_download(str(link), media_type="video" if is_video else "audio")
         if v2_path and os.path.exists(v2_path):
             _inc("success")
@@ -803,7 +822,7 @@ class YouTubeAPI:
                     duration_min = result.get("duration", "0:00")
                     vidid = result.get("id", "")
                     thumbs = result.get("thumbnails", [])
-                    thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
+                    thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else config.YOUTUBE_IMG_URL
                 else:
                     scrape_res = await self.fast_search(link)
                     if not scrape_res:
@@ -825,11 +844,17 @@ class YouTubeAPI:
                         duration_min = result.get("duration", "0:00")
                         vidid = result.get("id", "")
                         thumbs = result.get("thumbnails", [])
-                        thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
+                        thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else config.YOUTUBE_IMG_URL
 
                 if not is_safe_url(yturl):
                     raise Exception("Unsafe URL returned.")
 
+<<<<<<< Updated upstream
+                if not is_safe_url(yturl):
+                    raise Exception("Unsafe URL returned.")
+
+=======
+>>>>>>> Stashed changes
                 duration_sec = 0 if str(duration_min) == "None" else int(time_to_seconds(duration_min))
                 await set_search_cache(link, {
                     "title": title, "duration": duration_min,
@@ -906,7 +931,11 @@ class YouTubeAPI:
         return "0:00"
 
     async def thumbnail(self, link: str, videoid: Union[bool, str] = None) -> str:
+<<<<<<< Updated upstream
         fallback = getattr(config, "YOUTUBE_IMG_URL", "")
+=======
+        fallback = config.YOUTUBE_IMG_URL
+>>>>>>> Stashed changes
         if not link:
             return fallback
         link = str(link)
@@ -1028,7 +1057,7 @@ class YouTubeAPI:
                     duration_min = result.get("duration", "0:00")
                     vidid = result.get("id", "")
                     thumbs = result.get("thumbnails", [])
-                    thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
+                    thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else config.YOUTUBE_IMG_URL
                 else:
                     scrape_res = await self.fast_search(link)
                     if not scrape_res:
@@ -1050,7 +1079,11 @@ class YouTubeAPI:
                         duration_min = result.get("duration", "0:00")
                         vidid = result.get("id", "")
                         thumbs = result.get("thumbnails", [])
+<<<<<<< Updated upstream
                         thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
+=======
+                        thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else config.YOUTUBE_IMG_URL
+>>>>>>> Stashed changes
 
                 if not is_safe_url(yturl):
                     raise Exception("Unsafe URL returned.")
@@ -1140,7 +1173,7 @@ class YouTubeAPI:
                             duration_min = result.get("duration", "0:00")
                             vidid = result.get("id", target["video_id"])
                             thumbs = result.get("thumbnails", [])
-                            thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
+                            thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else config.YOUTUBE_IMG_URL
                             _inc("search_success")
                             return title, duration_min, thumbnail, vidid
 
@@ -1153,7 +1186,11 @@ class YouTubeAPI:
                 duration_min = result[query_type].get("duration", "0:00")
                 vidid = result[query_type].get("id", "")
                 thumbs = result[query_type].get("thumbnails", [])
+<<<<<<< Updated upstream
                 thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else getattr(config, "YOUTUBE_IMG_URL", "")
+=======
+                thumbnail = thumbs[0]["url"].split("?")[0] if thumbs else config.YOUTUBE_IMG_URL
+>>>>>>> Stashed changes
                 _inc("search_success")
                 return title, duration_min, thumbnail, vidid
 
@@ -1161,6 +1198,15 @@ class YouTubeAPI:
                 last_error = e
                 if attempt < SEARCH_RETRIES - 1:
                     await asyncio.sleep(0.5)
+<<<<<<< Updated upstream
+
+        LOGGER.error(f"slider() failed for {link}: {last_error}")
+        _inc("search_failed")
+        raise Exception(f"❌ Failed to load search options: {last_error}")
+
+    # ── Main download entry point ─────────────────────────────────────────────
+=======
+>>>>>>> Stashed changes
 
         LOGGER.error(f"slider() failed for {link}: {last_error}")
         _inc("search_failed")
@@ -1168,6 +1214,7 @@ class YouTubeAPI:
 
     # ── Main download entry point ─────────────────────────────────────────────
 
+    @error_logger(label="YouTube Download")
     async def download(
         self,
         link: str,

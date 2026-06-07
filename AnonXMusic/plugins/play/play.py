@@ -203,12 +203,21 @@ async def play_commnd(
             # Spotify developer credentials (SPOTIFY_CLIENT_ID / SECRET).
             # Only block if *neither* auth method is configured.
             _has_legacy_creds = bool(
+<<<<<<< Updated upstream
                 getattr(config, "SPOTIFY_CLIENT_ID", None)
                 and getattr(config, "SPOTIFY_CLIENT_SECRET", None)
             )
             _has_api2 = bool(
                 getattr(config, "API_URL2", None)
                 and getattr(config, "API_KEY2", None)
+=======
+                config.SPOTIFY_CLIENT_ID
+                and config.SPOTIFY_CLIENT_SECRET
+            )
+            _has_api2 = bool(
+                config.API_URL2
+                and config.API_KEY2
+>>>>>>> Stashed changes
             )
             if not _has_legacy_creds and not _has_api2:
                 return await mystic.edit_text(

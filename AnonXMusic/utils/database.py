@@ -750,3 +750,44 @@ async def get_bot_stats():
         "current_year": current_year,
         "last_year": last_year
     }
+
+
+# ── API Usage Tracking ────────────────────────────────────────────────────────
+# api_1 = Arc/deadline-tech (YouTube download via v2_download / optimized_download)
+# api_2 = OneGrab (Spotify, Apple, Deezer, Gaana, Tidal, JioSaavn, Twitch, Kick, MXPlayer)
+
+apiusagedb = mongodb.api_usage
+
+async def increment_api_usage(api: str) -> None:
+    """
+    Increment hit counter for api_1 or api_2.
+    Buckets: alltime, daily (YYYY-MM-DD), monthly (YYYY-MM).
+    """
+    if api not in ("api_1", "api_2"):
+        return
+    now = datetime.now()
+    day_key   = now.strftime("%Y-%m-%d")
+    month_key = now.strftime("%Y-%m")
+
+    for bucket, date in (("alltime", "alltime"), ("daily", day_key), ("monthly", month_key)):
+        await apiusagedb.update_one(
+            {"bucket": bucket, "date": date},
+            {"$inc": {api: 1}},
+            upsert=True,
+        )
+
+async def get_api_usage() -> dict:
+    """Return alltime, today, and this-month counts for api_1 and api_2."""
+    now       = datetime.now()
+    day_key   = now.strftime("%Y-%m-%d")
+    month_key = now.strftime("%Y-%m")
+
+    alltime = await apiusagedb.find_one({"bucket": "alltime", "date": "alltime"}) or {}
+    daily   = await apiusagedb.find_one({"bucket": "daily",   "date": day_key})   or {}
+    monthly = await apiusagedb.find_one({"bucket": "monthly", "date": month_key}) or {}
+
+    return {
+        "alltime": {"api_1": alltime.get("api_1", 0), "api_2": alltime.get("api_2", 0)},
+        "daily":   {"api_1": daily.get("api_1", 0),   "api_2": daily.get("api_2", 0)},
+        "monthly": {"api_1": monthly.get("api_1", 0), "api_2": monthly.get("api_2", 0)},
+    }

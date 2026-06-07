@@ -21,7 +21,7 @@ class KickAPI:
         return ApiPlatform()
 
     def _ready(self) -> bool:
-        return bool(getattr(config, "API_URL2", "") and getattr(config, "API_KEY2", ""))
+        return bool(config.API_URL2 and config.API_KEY2)
 
     async def track(self, url: str):
         if not self._ready(): return None

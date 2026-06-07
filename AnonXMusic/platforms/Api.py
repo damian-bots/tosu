@@ -11,6 +11,8 @@ import aiohttp
 import aiofiles
 
 import config
+from AnonXMusic.utils.database import increment_api_usage
+from AnonXMusic.utils.error_logger import error_logger
 from AnonXMusic.utils.formatters import seconds_to_min
 
 LOGGER = logging.getLogger(__name__)
@@ -270,11 +272,11 @@ class ApiPlatform:
     # ── helpers ────────────────────────────────────────────────
     @property
     def _api_url(self) -> str:
-        return (getattr(config, "API_URL2", "") or "").rstrip("/")
+        return config.API_URL2.rstrip("/") if config.API_URL2 else ""
 
     @property
     def _api_key(self) -> str:
-        return getattr(config, "API_KEY2", "") or ""
+        return config.API_KEY2 or ""
 
     @property
     def _ready(self) -> bool:
@@ -323,6 +325,7 @@ class ApiPlatform:
             LOGGER.error(f"API-2 GET {endpoint} failed: {e}")
             return None
 
+    @error_logger(label="API get_info")
     async def get_info(self, url: str) -> Optional[dict]:
         """
         Fetch playlist / album / artist metadata.
@@ -440,6 +443,10 @@ class ApiPlatform:
             })
         return tracks
 
+<<<<<<< Updated upstream
+=======
+    @error_logger(label="API Playlist Fetch")
+>>>>>>> Stashed changes
     async def playlist(self, url: str) -> Optional[tuple[list[dict], str]]:
         """
         Returns (list_of_MusicTrack_dicts, playlist_id).
@@ -477,6 +484,7 @@ class ApiPlatform:
         return tracks, url
 
     # ── Download ───────────────────────────────────────────────
+    @error_logger(label="API Track Download")
     async def download(self, url: str, video: bool = False) -> Optional[str]:
         """
         Full download pipeline:
@@ -507,12 +515,19 @@ class ApiPlatform:
 
         if platform in _ENCRYPTED_PLATFORMS and hex_key:
             LOGGER.info(f"API-2: Spotify encrypted download for {track_id}")
-            return await _download_spotify_track(cdn_url, hex_key, track_id)
+            result = await _download_spotify_track(cdn_url, hex_key, track_id)
+            if result:
+                await increment_api_usage("api_2")
+            return result
 
         stream_platforms = {"twitch", "twitchclip", "kick", "kickclip", "mxplayer"}
         if platform in stream_platforms:
             LOGGER.info(f"API-2: stream URL passthrough for {platform}")
+            await increment_api_usage("api_2")
             return cdn_url
 
         ext = "mp4" if video else "mp3"
-        return await _download_direct(cdn_url, track_id, ext)
+        result = await _download_direct(cdn_url, track_id, ext)
+        if result:
+            await increment_api_usage("api_2")
+        return result
