@@ -20,7 +20,6 @@ async def ping_com(client, message: Message, _):
     resp = round((datetime.now() - start).total_seconds() * 1000, 3)
     await response.edit_text(
         f"<b>🏓 Pong!</b>  <code>{resp} ms</code>\n\n"
-        f"<b>⚙️ Bot:</b> {app.mention}\n\n"
         f"<b>📊 System:</b>\n"
         f"  • Uptime: <code>{UP}</code>\n"
         f"  • CPU: <code>{CPU}</code>\n"

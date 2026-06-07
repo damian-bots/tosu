@@ -1,3 +1,7 @@
+# ── Kurigram 2.2.x / pytgcalls 0.9.x compatibility patch ──────────────────
+# Must be imported BEFORE any pytgcalls client is created or started.
+import AnonXMusic.core.kurigram_compat  # noqa: F401
+
 from AnonXMusic.core.bot import Anony
 from AnonXMusic.core.dir import dirr
 from AnonXMusic.core.git import git

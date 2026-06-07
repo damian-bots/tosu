@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from random import randint
@@ -74,41 +75,88 @@ async def stream(
     if forceplay:
         await Anony.force_stop_stream(chat_id)
     if streamtype == "playlist":
+        import time as _time
         import traceback as _tb
+        from pyrogram.errors import FloodWait
         from AnonXMusic.utils.formatters import seconds_to_min
 
-        # ── Step 1: Collect and validate all tracks instantly ─────────────────
-        valid_tracks = []
-        skipped = 0
+        # ── Throttled progress editor ─────────────────────────────────────────
+        # Edits the mystic message at most once every PROGRESS_INTERVAL seconds.
+        # Catches FloodWait transparently — sleeps the required time and retries
+        # once, so the loop is never stuck waiting on a flood.
+        PROGRESS_INTERVAL = 4.0          # minimum seconds between edits
+        _last_edit_ts: float = 0.0
 
-        for raw_track in result:
+        async def _progress(text: str) -> None:
+            nonlocal _last_edit_ts
+            now = _time.monotonic()
+            if now - _last_edit_ts < PROGRESS_INTERVAL:
+                return                   # skip — too soon
+            for _attempt in range(2):
+                try:
+                    await mystic.edit_text(text, disable_web_page_preview=True)
+                    _last_edit_ts = _time.monotonic()
+                    return
+                except FloodWait as fw:
+                    wait = fw.value + 1
+                    LOGGER.warning(f"Playlist progress: FloodWait {wait}s — sleeping")
+                    await asyncio.sleep(wait)
+                    _last_edit_ts = _time.monotonic()  # reset after sleep
+                except Exception:
+                    return               # non-fatal — skip this update
+
+        # ── Step 1: Collect raw track list ────────────────────────────────────
+        # result is either:
+        #   • list[dict]  — from API-2 / spotipy (has title, duration, url …)
+        #   • list[str]   — legacy YouTube search queries (kept for compat)
+        #
+        # spotipy dicts carry _source="spotipy" and no Spotify CDN URL, so they
+        # must be resolved via YouTube search using their title field.
+
+        raw_total   = len(result) if result else 0
+        valid_tracks = []
+        skipped      = 0
+
+        await _progress(
+            f"⏳ <b>Processing {raw_total} track(s)…</b>\n"
+            f"<i>Resolving metadata, please wait…</i>"
+        )
+
+        for idx, raw_track in enumerate(result or []):
             if len(valid_tracks) >= config.PLAYLIST_FETCH_LIMIT:
                 break
 
             if isinstance(raw_track, dict) and raw_track.get("title"):
                 t_title        = raw_track.get("title") or "Unknown"
-                t_duration_sec = int(raw_track.get("duration") or 0)
+                t_duration_sec = int(raw_track.get("duration") or raw_track.get("duration_sec") or 0)
                 t_thumbnail    = raw_track.get("thumbnail") or ""
-                t_vidid        = raw_track.get("id") or raw_track.get("url") or ""
+                t_vidid        = raw_track.get("id") or raw_track.get("vidid") or raw_track.get("url") or ""
                 t_platform     = (raw_track.get("platform") or "").lower()
-                t_direct_url   = raw_track.get("url") or ""
+                t_direct_url   = raw_track.get("url") or raw_track.get("link") or ""
+                t_source       = raw_track.get("_source") or ""   # "spotipy" signals YT-resolve needed
 
-                if not t_title or not t_vidid:
-                    skipped += 1
-                    continue
-                if t_duration_sec <= 0:
-                    skipped += 1
-                    continue
-                if t_duration_sec > config.DURATION_LIMIT:
-                    skipped += 1
-                    continue
-
-                t_duration_min = seconds_to_min(t_duration_sec)
-
-                if t_direct_url and t_platform and t_platform not in ("youtube", ""):
-                    t_file_ref = t_direct_url
+                # spotipy tracks: no CDN URL — must be resolved via YouTube search
+                # We mark them as youtube platform so the download loop handles them.
+                if t_source == "spotipy" or not t_direct_url or t_platform == "":
+                    # Try to get a proper YouTube ID from the title
+                    t_platform   = "spotipy_yt"   # will be resolved in download loop
+                    t_file_ref   = f"yt_search_{t_title}"   # sentinel
                 else:
-                    t_file_ref = f"vid_{t_vidid}" if t_vidid else t_direct_url
+                    if not t_title:
+                        skipped += 1
+                        continue
+                    if t_duration_sec > 0 and t_duration_sec > config.DURATION_LIMIT:
+                        skipped += 1
+                        continue
+                    if t_direct_url and t_platform and t_platform not in ("youtube", ""):
+                        t_file_ref = t_direct_url
+                    else:
+                        t_file_ref = f"vid_{t_vidid}" if t_vidid else t_direct_url
+
+                if t_duration_sec > 0:
+                    t_duration_min = seconds_to_min(t_duration_sec)
+                else:
+                    t_duration_min = "0:00"
 
                 valid_tracks.append({
                     "title":        t_title,
@@ -121,9 +169,80 @@ async def stream(
                     "file_ref":     t_file_ref,
                 })
 
+            elif isinstance(raw_track, str) and raw_track.strip():
+                # Legacy string-based YouTube search query
+                valid_tracks.append({
+                    "title":        raw_track,
+                    "duration_min": "0:00",
+                    "duration_sec": 0,
+                    "thumbnail":    "",
+                    "vidid":        "",
+                    "platform":     "yt_search",
+                    "direct_url":   "",
+                    "file_ref":     f"yt_search_{raw_track}",
+                })
             else:
-                # String-based (YouTube search query)
-                search = raw_track if isinstance(raw_track, str) else str(raw_track)
+                skipped += 1
+
+        total = len(valid_tracks)
+        if total == 0:
+            await _progress("❌ <b>No valid tracks found in the playlist.</b>")
+            return
+
+        # ── Step 2: Show track list immediately ───────────────────────────────
+        track_list_preview = ""
+        for i, t in enumerate(valid_tracks[:15], 1):
+            track_list_preview += f"{i}. {t['title'][:55]}\n"
+        if total > 15:
+            track_list_preview += f"… and {total - 15} more"
+
+        try:
+            await mystic.edit_text(
+                f"🎵 <b>Found {total} song(s)</b>"
+                + (f" <i>({skipped} skipped)</i>" if skipped else "")
+                + f"\n\n<blockquote expandable>{track_list_preview}</blockquote>\n"
+                f"⏳ <i>Queuing tracks…</i>",
+                disable_web_page_preview=True,
+            )
+            _last_edit_ts = _time.monotonic()
+        except FloodWait as fw:
+            await asyncio.sleep(fw.value + 1)
+        except Exception:
+            pass
+
+        # ── Step 3: Download & queue one by one ───────────────────────────────
+        count  = 0
+        failed = 0
+        msg    = f"{_['play_19']}\n\n"
+        status = True if video else None
+
+        for idx, track_data in enumerate(valid_tracks):
+            title        = track_data["title"]
+            duration_min = track_data["duration_min"]
+            duration_sec = track_data["duration_sec"]
+            thumbnail    = track_data["thumbnail"]
+            vidid        = track_data["vidid"]
+            platform     = track_data["platform"]
+            file_ref     = track_data["file_ref"]
+            thumb        = thumbnail
+
+            # ── Throttled progress update ─────────────────────────────────────
+            await _progress(
+                f"🎵 <b>Playlist — {count}/{total} queued</b>\n\n"
+                f"⬇️ Processing <b>{title[:60]}</b>…"
+            )
+
+            # ── Resolve tracks that need a YouTube search ─────────────────────
+            # Covers: spotipy tracks, legacy string queries, API-2 tracks with
+            # no CDN URL set, and any track explicitly tagged for YT resolution.
+            needs_yt_resolve = (
+                platform in ("spotipy_yt", "yt_search", "youtube", "")
+                or file_ref.startswith("yt_search_")
+                or (file_ref.startswith("vid_") and not vidid)
+            )
+
+            if needs_yt_resolve:
+                search_query = title   # already has "Title Artist" from spotipy
                 try:
                     (
                         t_title,
@@ -131,75 +250,30 @@ async def stream(
                         t_duration_sec,
                         t_thumb,
                         t_vidid,
-                    ) = await YouTube.details(search, False if spotify else True)
-                except Exception:
-                    skipped += 1
+                    ) = await YouTube.details(search_query, False if spotify else True)
+                except Exception as exc:
+                    LOGGER.warning(
+                        f"Playlist: YouTube details failed for {title!r}: {exc}"
+                    )
+                    failed += 1
                     continue
+
                 if str(t_duration_min) == "None" or t_duration_sec > config.DURATION_LIMIT:
-                    skipped += 1
+                    failed += 1
                     continue
 
-                valid_tracks.append({
-                    "title":        t_title,
-                    "duration_min": t_duration_min,
-                    "duration_sec": t_duration_sec,
-                    "thumbnail":    t_thumb,
-                    "vidid":        t_vidid,
-                    "platform":     "youtube",
-                    "direct_url":   "",
-                    "file_ref":     f"vid_{t_vidid}",
-                })
+                # Update with resolved YouTube data
+                title        = t_title
+                duration_min = t_duration_min
+                duration_sec = t_duration_sec
+                thumbnail    = t_thumb or thumb
+                vidid        = t_vidid
+                file_ref     = f"vid_{t_vidid}"
+                platform     = "youtube"
 
-        total = len(valid_tracks)
-        if total == 0:
-            return
-
-        # ── Step 2: Show total songs immediately ──────────────────────────────
-        track_list_preview = ""
-        for i, t in enumerate(valid_tracks[:15], 1):
-            track_list_preview += f"{i}. {t['title'][:55]}\n"
-        if total > 15:
-            track_list_preview += f"... and {total - 15} more\n"
-
-        try:
-            await mystic.edit_text(
-                f"🎵 <b>Found {total} songs</b>\n\n"
-                f"<blockquote expandable>{track_list_preview}</blockquote>\n"
-                f"⏳ <i>Downloading tracks one by one...</i>",
-                disable_web_page_preview=True,
-            )
-        except Exception:
-            pass
-
-        # ── Step 3: Download & queue one by one ───────────────────────────────
-        count = 0
-        msg   = f"{_['play_19']}\n\n"
-        first_track_played = False
-        status = True if video else None
-
-        for track_data in valid_tracks:
-            title        = track_data["title"]
-            duration_min = track_data["duration_min"]
-            thumbnail    = track_data["thumbnail"]
-            vidid        = track_data["vidid"]
-            platform     = track_data["platform"]
-            file_ref     = track_data["file_ref"]
-            thumb        = thumbnail
-
-            # Show download progress
-            try:
-                await mystic.edit_text(
-                    f"🎵 <b>Playlist — {count}/{total} done</b>\n\n"
-                    f"⬇️ Downloading <b>{title[:60]}</b>...",
-                    disable_web_page_preview=True,
-                )
-            except Exception:
-                pass
-
-            # ── Resolve API-2 (Spotify/Gaana/etc.) CDN URLs ──────────────────
-            if (
-                not file_ref.startswith("vid_")
-                and file_ref.startswith("http")
+            # ── Resolve API-2 CDN URLs for non-YouTube platforms ──────────────
+            elif (
+                file_ref.startswith("http")
                 and platform
                 and platform not in ("youtube", "")
             ):
@@ -210,18 +284,41 @@ async def stream(
                         from AnonXMusic.platforms.Api import ApiPlatform
                         resolved = await ApiPlatform().download(file_ref)
                     if resolved:
+                        if not os.path.isabs(resolved) and not resolved.startswith("http"):
+                            resolved = os.path.join(os.getcwd(), resolved)
                         file_ref = resolved
                     else:
-                        LOGGER.warning(f"Playlist: API-2 download returned None for {title!r}")
-                        continue
+                        LOGGER.warning(
+                            f"Playlist: API-2 download None for {title!r} — "
+                            f"trying YouTube fallback"
+                        )
+                        # Fallback to YouTube search using track title
+                        try:
+                            (
+                                t_title, t_duration_min, t_duration_sec,
+                                t_thumb, t_vidid,
+                            ) = await YouTube.details(title, True)
+                            if str(t_duration_min) != "None":
+                                title        = t_title
+                                duration_min = t_duration_min
+                                vidid        = t_vidid
+                                file_ref     = f"vid_{t_vidid}"
+                                platform     = "youtube"
+                            else:
+                                failed += 1
+                                continue
+                        except Exception:
+                            failed += 1
+                            continue
                 except Exception as exc:
                     LOGGER.error(
-                        f"Playlist: API-2 download error for {title!r}:\n"
+                        f"Playlist: API-2 error for {title!r}:\n"
                         + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
                     )
+                    failed += 1
                     continue
 
-            # ── Queue (active call) or start (fresh call) ─────────────────────
+            # ── Queue or start ────────────────────────────────────────────────
             try:
                 if await is_active_chat(chat_id):
                     await put_queue(
@@ -251,7 +348,7 @@ async def stream(
                             )
                         except Exception as exc:
                             LOGGER.error(
-                                f"Playlist: YouTube download error for {title!r}:\n"
+                                f"Playlist: YT download error for {title!r}:\n"
                                 + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
                             )
                             file_path = None
@@ -297,7 +394,6 @@ async def stream(
                     run = await _edit_or_send_photo(mystic, app, original_chat_id, img, caption, button)
                     db[chat_id][0]["mystic"] = run
                     db[chat_id][0]["markup"] = "stream"
-                    first_track_played = True
                     count += 1
                     msg += f"{count}. {title[:70]}\n"
                     msg += f"{_['play_20']} 0\n\n"
@@ -309,9 +405,18 @@ async def stream(
                     f"Playlist: queue/stream error for {title!r}:\n"
                     + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
                 )
+                failed += 1
                 continue
 
         if count == 0:
+            try:
+                await mystic.edit_text(
+                    "❌ <b>Playlist failed</b>\n\n"
+                    f"Could not queue any tracks. {failed} track(s) failed to resolve.",
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
             return
         else:
             link  = await AnonyBin(msg)
@@ -372,10 +477,10 @@ async def stream(
             )
             position = len(db.get(chat_id)) - 1
             button   = aq_markup(_, chat_id)
-            await app.send_message(
-                chat_id=original_chat_id,
+            run_q = await mystic.edit_text(
                 text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
+                disable_web_page_preview=True,
             )
         else:
             if not forceplay:
@@ -434,10 +539,10 @@ async def stream(
             )
             position = len(db.get(chat_id)) - 1
             button   = aq_markup(_, chat_id)
-            await app.send_message(
-                chat_id=original_chat_id,
+            run_q = await mystic.edit_text(
                 text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
+                disable_web_page_preview=True,
             )
         else:
             if not forceplay:
@@ -506,10 +611,10 @@ async def stream(
             )
             position = len(db.get(chat_id)) - 1
             button   = aq_markup(_, chat_id)
-            await app.send_message(
-                chat_id=original_chat_id,
+            run_q = await mystic.edit_text(
                 text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
+                disable_web_page_preview=True,
             )
         else:
             if not forceplay:
@@ -556,10 +661,10 @@ async def stream(
             )
             position = len(db.get(chat_id)) - 1
             button   = aq_markup(_, chat_id)
-            await app.send_message(
-                chat_id=original_chat_id,
+            run_q = await mystic.edit_text(
                 text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
+                disable_web_page_preview=True,
             )
         else:
             if not forceplay:
@@ -607,10 +712,10 @@ async def stream(
             )
             position = len(db.get(chat_id)) - 1
             button   = aq_markup(_, chat_id)
-            await app.send_message(
-                chat_id=original_chat_id,
+            run_q = await mystic.edit_text(
                 text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                 reply_markup=InlineKeyboardMarkup(button),
+                disable_web_page_preview=True,
             )
         else:
             if not forceplay:

@@ -72,7 +72,7 @@ _ENCRYPTED_PLATFORMS = {"spotify"}
 
 CHUNK = 1024 * 1024
 DOWNLOAD_TIMEOUT = 120
-DOWNLOADS_DIR = "downloads"
+DOWNLOADS_DIR = os.path.join(os.getcwd(), "downloads")
 
 _session: Optional[aiohttp.ClientSession] = None
 _session_lock = asyncio.Lock()

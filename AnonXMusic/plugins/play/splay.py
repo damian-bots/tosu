@@ -4,14 +4,17 @@ AnonXMusic/plugins/play/splay.py
 /splay <song name>  — Search Spotify by name, fetch metadata instantly,
                        download via API-2, then play/queue.
 
-Flow mirrors TgMusicBot:
+Flow:
   1. /splay <query>
   2. Search Spotify via API-2 /api/search → show match details instantly
   3. Download via API-2 (AES-CTR decrypt for Spotify)
-  4. Feed into stream() with streamtype="spotify" (reuses all queue/NowPlaying logic)
+  4. Feed into stream() — reuses all queue/NowPlaying logic:
+       • If chat already active → adds to queue, edits mystic to show queue position
+       • If chat is fresh      → joins call, edits mystic to Now Playing card
 """
 
 import logging
+import os
 import traceback as _tb
 
 from pyrogram import filters
@@ -143,7 +146,18 @@ async def splay_command(client, message: Message, _):
             f"Try: <code>/play {title}</code> to search YouTube instead."
         )
 
-    # ── 4. Feed into stream() using the existing API-2 streamtype ───────────
+    # Ensure we have an absolute path (pytgcalls / ffprobe requires it)
+    if not os.path.isabs(file_path):
+        file_path = os.path.join(os.getcwd(), file_path)
+
+    if not os.path.isfile(file_path):
+        return await mystic.edit_text(
+            f"❌ <b>File Not Found</b>\n\n"
+            f"The downloaded file for <b>{title}</b> could not be located.\n"
+            f"Try: <code>/play {title}</code> to search YouTube instead."
+        )
+
+    # ── 4. Feed into stream() ── mystic is edited in-place by stream() ───────
     details = {
         "title":        title,
         "link":         track_url,

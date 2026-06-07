@@ -6,7 +6,7 @@ import json
 import glob
 import random
 import logging
-from typing import Union, Optional
+from typing import Any, Dict, Union, Optional
 from pathlib import Path
 from urllib.parse import urlparse, unquote, quote
 
@@ -30,7 +30,7 @@ from AnonXMusic import LOGGER as LOG
 MEDIA_DB_NAME = "arcapi"
 MEDIA_COLLECTION_NAME = "medias"
 
-DOWNLOAD_DIR = "downloads"
+DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
 LOGGER = LOG(__name__)
 
 CHUNK_SIZE = 1024 * 1024
