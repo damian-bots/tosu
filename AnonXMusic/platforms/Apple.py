@@ -25,7 +25,6 @@ _APPLE_RE = re.compile(
     r"|playlist\/[^\/]+\/pl\.[\w.-]+|artist\/[^\/]+\/\d+)(?:\?.*)?$"
 )
 
-
 class AppleAPI:
     def __init__(self) -> None:
         self.regex = r"^(https:\/\/music.apple.com\/)(.*)$"
@@ -41,18 +40,15 @@ class AppleAPI:
     def _api_ready(self) -> bool:
         return bool(config.API_URL2 and config.API_KEY2)
 
-    # ── single track ───────────────────────────────────────────
     async def track(self, url: str, playid: Union[bool, str] = None):
         if playid:
             url = self.base + url
 
-        # Try API-2 first
         if self._api_ready():
             result = await self._api().track(url)
             if result:
                 return result
 
-        # Fallback: scrape Apple Music page → search YouTube
         return await self._scrape_track(url)
 
     async def _scrape_track(self, url: str):
@@ -85,7 +81,6 @@ class AppleAPI:
             LOGGER.error(f"Apple scrape_track failed: {e}")
             return False
 
-    # ── playlist ───────────────────────────────────────────────
     async def playlist(self, url: str, playid: Union[bool, str] = None):
         if playid:
             url = self.base + url
@@ -119,7 +114,6 @@ class AppleAPI:
             LOGGER.error(f"Apple scrape_playlist failed: {e}")
             return False
 
-    # ── album (API-2 only; Apple albums need JS rendering so no fallback) ──
     async def album(self, url: str):
         if self._api_ready():
             result = await self._api().album(url)
@@ -127,7 +121,6 @@ class AppleAPI:
                 return result
         return [], url.split("/")[-1].split("?")[0]
 
-    # ── artist ─────────────────────────────────────────────────
     async def artist(self, url: str):
         if self._api_ready():
             result = await self._api().artist(url)
@@ -135,7 +128,6 @@ class AppleAPI:
                 return result
         return [], url.split("/")[-1].split("?")[0]
 
-    # ── download ───────────────────────────────────────────────
     async def download(self, url: str, video: bool = False) -> Optional[str]:
         if not self._api_ready():
             return None
