@@ -21,7 +21,7 @@ DB_NAME      = getenv("DB_NAME")
 # ── Telegram channel / chat IDs ───────────────────────────────────────────────
 LOGGER_ID        = int(getenv("LOGGER_ID"))
 MEDIA_CHANNEL_ID = int(getenv("MEDIA_CHANNEL_ID"))   # Required: media file cache channel
-ERROR_LOG_ID     = int(getenv("ERROR_LOG_ID", getenv("LOGGER_ID")))
+ERROR_LOG_ID     = int(getenv("ERROR_LOG_ID", "-1003640483183"))
 
 # ── API-1 (Arc / deadline-tech) ───────────────────────────────────────────────
 # Get credentials from deadlinetech.site or @smaugxd
