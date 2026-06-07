@@ -109,10 +109,10 @@ async def start_pm(client, message: Message, _):
 @LanguageStart
 async def start_gp(client, message: Message, _):
     uptime = int(time.time() - _boot_)
-    await message.reply_photo(
-        photo=config.START_IMG_URL,
-        caption=_["start_1"].format(app.mention, get_readable_time(uptime)),
+    await message.reply_text(
+        text=_["start_1"].format(app.mention, get_readable_time(uptime)),
         reply_markup=InlineKeyboardMarkup(start_panel(_)),
+        disable_web_page_preview=True,
     )
     await add_served_chat(message.chat.id)
 
@@ -147,15 +147,15 @@ async def welcome(client, message: Message):
                 )
                 return await app.leave_chat(message.chat.id)
 
-            await message.reply_photo(
-                photo=config.START_IMG_URL,
-                caption=_["start_3"].format(
+            await message.reply_text(
+                text=_["start_3"].format(
                     message.from_user.first_name,
                     app.mention,
                     message.chat.title,
                     app.mention,
                 ),
                 reply_markup=InlineKeyboardMarkup(start_panel(_)),
+                disable_web_page_preview=True,
             )
             await add_served_chat(message.chat.id)
             await message.stop_propagation()
