@@ -28,7 +28,6 @@ from AnonXMusic.utils.logger import play_logs
 from AnonXMusic.utils.stream.stream import stream
 from config import BANNED_USERS, lyrical
 
-
 @app.on_message(
     filters.command(
         [
@@ -199,25 +198,13 @@ async def play_commnd(
             if not config.ENABLE_SPOTIFY:
                 return await mystic.edit_text(_["play_disabled"].format("Spotify"))
             spotify = True
-            # Allow the API-2 path (API_URL2 + API_KEY2) even without legacy
-            # Spotify developer credentials (SPOTIFY_CLIENT_ID / SECRET).
-            # Only block if *neither* auth method is configured.
             _has_legacy_creds = bool(
-<<<<<<< Updated upstream
-                getattr(config, "SPOTIFY_CLIENT_ID", None)
-                and getattr(config, "SPOTIFY_CLIENT_SECRET", None)
-            )
-            _has_api2 = bool(
-                getattr(config, "API_URL2", None)
-                and getattr(config, "API_KEY2", None)
-=======
                 config.SPOTIFY_CLIENT_ID
                 and config.SPOTIFY_CLIENT_SECRET
             )
             _has_api2 = bool(
                 config.API_URL2
                 and config.API_KEY2
->>>>>>> Stashed changes
             )
             if not _has_legacy_creds and not _has_api2:
                 return await mystic.edit_text(
@@ -517,15 +504,10 @@ async def play_commnd(
             cap = _["play_10"].format(details["title"], details["duration_min"])
 
         elif DirectMedia.is_valid(url):
-            # --- Direct HTTP/HTTPS media URL or M3U8/HLS stream ---
-            # Uses the existing "index" streamtype which passes raw URLs
-            # directly to pytgcalls/ffmpeg without any download step.
             await mystic.edit_text(_["raw_1"])
             dm_info = await DirectMedia.get_info(url)
             if not dm_info:
                 return await mystic.edit_text(_["raw_2"])
-            # "index" streamtype in stream.py expects `details` to be the
-            # raw URL string (passed as `result`), not a dict.
             details = url
             streamtype = "index"
             img = config.STREAM_IMG_URL if hasattr(config, "STREAM_IMG_URL") else config.YOUTUBE_IMG_URL
@@ -534,8 +516,6 @@ async def play_commnd(
                 "M3U8 / Live Stream" if dm_info["is_live"] else "Direct Media",
                 dm_info["duration_min"] or "Live",
             )
-            # For duration-limit check we need a fake details dict — set it
-            # after the stream call so we skip the duration check for index URLs.
             track_id = url
         else:
             return await mystic.edit_text(
@@ -564,7 +544,6 @@ async def play_commnd(
 
     if str(playmode) == "Direct":
         if not plist_type:
-            # For index/direct-link streamtypes details is a raw URL string; skip dict checks.
             if streamtype not in ("index", "direct_link", "live_stream"):
                 duration_sec = time_to_seconds(details["duration_min"])
                 if duration_sec > 0:
@@ -573,7 +552,6 @@ async def play_commnd(
                             _["play_6"].format(config.DURATION_LIMIT_MIN, app.mention)
                         )
                 else:
-                    # duration_sec == 0 means no duration info → live stream
                     buttons = livestream_markup(
                         _,
                         track_id,
@@ -664,7 +642,6 @@ async def play_commnd(
                 )
                 return await play_logs(message, streamtype=f"URL Searched Inline")
 
-
 @app.on_callback_query(filters.regex("MusicStream") & ~BANNED_USERS)
 @languageCB
 async def play_music(client, CallbackQuery, _):
@@ -700,7 +677,6 @@ async def play_music(client, CallbackQuery, _):
                 _["play_6"].format(config.DURATION_LIMIT_MIN, app.mention)
             )
     else:
-        # duration_sec == 0 means no duration info → live stream
         buttons = livestream_markup(
             _,
             track_id,
@@ -734,7 +710,6 @@ async def play_music(client, CallbackQuery, _):
         return await mystic.edit_text(err)
     return await mystic.delete()
 
-
 @app.on_callback_query(filters.regex("AnonymousAdmin") & ~BANNED_USERS)
 async def anonymous_check(client, CallbackQuery):
     try:
@@ -744,7 +719,6 @@ async def anonymous_check(client, CallbackQuery):
         )
     except:
         pass
-
 
 @app.on_callback_query(filters.regex("AnonyPlaylists") & ~BANNED_USERS)
 @languageCB
@@ -815,7 +789,7 @@ async def play_playlists_command(client, CallbackQuery, _):
                 result, _ = await Apple.playlist(videoid, True)
         except:
             return await mystic.edit_text(_["play_3"])
-        spotify = True  # MusicTrack dicts from API-2; not YouTube video IDs
+        spotify = True
     elif ptype in ("deezerplay", "deezeralbum"):
         if not config.API_URL2 or not config.API_KEY2:
             return await mystic.edit_text("❌ Deezer requires API_URL2 & API_KEY2.")
@@ -826,7 +800,7 @@ async def play_playlists_command(client, CallbackQuery, _):
                 result, _ = await Deezer.playlist(videoid)
         except:
             return await mystic.edit_text(_["play_3"])
-        spotify = True  # MusicTrack dicts from API-2; not YouTube video IDs
+        spotify = True
     elif ptype in ("tidalplay", "tidalalbum"):
         if not config.API_URL2 or not config.API_KEY2:
             return await mystic.edit_text("❌ Tidal requires API_URL2 & API_KEY2.")
@@ -837,7 +811,7 @@ async def play_playlists_command(client, CallbackQuery, _):
                 result, _ = await Tidal.playlist(videoid)
         except:
             return await mystic.edit_text(_["play_3"])
-        spotify = True  # MusicTrack dicts from API-2; not YouTube video IDs
+        spotify = True
     elif ptype == "jiosaavnplay":
         if not config.API_URL2 or not config.API_KEY2:
             return await mystic.edit_text("❌ JioSaavn requires API_URL2 & API_KEY2.")
@@ -845,7 +819,7 @@ async def play_playlists_command(client, CallbackQuery, _):
             result, _ = await JioSaavn.playlist(videoid)
         except:
             return await mystic.edit_text(_["play_3"])
-        spotify = True  # MusicTrack dicts from API-2; not YouTube video IDs
+        spotify = True
     else:
         return await mystic.edit_text(_["play_3"])
     try:
@@ -867,7 +841,6 @@ async def play_playlists_command(client, CallbackQuery, _):
         err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
         return await mystic.edit_text(err)
     return await mystic.delete()
-
 
 @app.on_callback_query(filters.regex("slider") & ~BANNED_USERS)
 @languageCB
