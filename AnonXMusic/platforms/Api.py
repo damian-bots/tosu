@@ -68,20 +68,14 @@ _PATTERNS: dict[str, re.Pattern] = {
     ),
 }
 
-# Platforms whose tracks need AES-CTR decryption (currently only Spotify CDN)
 _ENCRYPTED_PLATFORMS = {"spotify"}
 
-CHUNK = 1024 * 1024  # 1 MB streaming chunks
+CHUNK = 1024 * 1024
 DOWNLOAD_TIMEOUT = 120
 DOWNLOADS_DIR = "downloads"
 
-
-# ──────────────────────────────────────────────────────────────
-# Thin aiohttp session (module-level singleton)
-# ──────────────────────────────────────────────────────────────
 _session: Optional[aiohttp.ClientSession] = None
 _session_lock = asyncio.Lock()
-
 
 async def _get_session() -> aiohttp.ClientSession:
     global _session
@@ -95,10 +89,6 @@ async def _get_session() -> aiohttp.ClientSession:
         _session = aiohttp.ClientSession(connector=connector, timeout=timeout)
         return _session
 
-
-# ──────────────────────────────────────────────────────────────
-# Spotify AES-CTR decryption  (mirrors spotify_dl.go)
-# ──────────────────────────────────────────────────────────────
 def _decrypt_spotify(data: bytes, hex_key: str) -> bytes:
     """Decrypt Spotify CDN audio with AES-128-CTR."""
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -109,7 +99,6 @@ def _decrypt_spotify(data: bytes, hex_key: str) -> bytes:
     cipher = Cipher(algorithms.AES(key), modes.CTR(iv), backend=default_backend())
     dec = cipher.decryptor()
     return dec.update(data) + dec.finalize()
-
 
 def _rebuild_ogg(data: bytearray) -> bytearray:
     """
@@ -133,7 +122,6 @@ def _rebuild_ogg(data: bytearray) -> bytearray:
             data[offset:end] = patch
     return data
 
-
 async def _fix_ogg_ffmpeg(src: str, dst: str) -> bool:
     """Re-mux OGG with ffmpeg (mirrors fixOGG in spotify_dl.go)."""
     try:
@@ -148,10 +136,6 @@ async def _fix_ogg_ffmpeg(src: str, dst: str) -> bool:
         LOGGER.error(f"ffmpeg fixOGG failed: {e}")
         return False
 
-
-# ──────────────────────────────────────────────────────────────
-# Core download helpers
-# ──────────────────────────────────────────────────────────────
 async def _stream_to_file(url: str, path: str) -> bool:
     """Stream-download a URL to *path*. Returns True on success."""
     os.makedirs(DOWNLOADS_DIR, exist_ok=True)
@@ -175,7 +159,6 @@ async def _stream_to_file(url: str, path: str) -> bool:
             pass
         return False
 
-
 async def _download_spotify_track(cdn_url: str, hex_key: str, track_id: str) -> Optional[str]:
     """
     Download + AES-CTR decrypt a Spotify CDN track, rebuild OGG headers,
@@ -185,7 +168,6 @@ async def _download_spotify_track(cdn_url: str, hex_key: str, track_id: str) -> 
     safe_id = os.path.basename(track_id)
     out_ogg = os.path.join(DOWNLOADS_DIR, f"{safe_id}.ogg")
 
-    # Already on disk?
     if os.path.exists(out_ogg) and os.path.getsize(out_ogg) > 0:
         return out_ogg
 
@@ -193,7 +175,6 @@ async def _download_spotify_track(cdn_url: str, hex_key: str, track_id: str) -> 
     dec_path = os.path.join(DOWNLOADS_DIR, f"{safe_id}_decrypted.ogg")
 
     try:
-        # 1. Download encrypted blob
         session = await _get_session()
         async with session.get(cdn_url, timeout=aiohttp.ClientTimeout(total=DOWNLOAD_TIMEOUT)) as resp:
             if resp.status != 200:
@@ -204,20 +185,16 @@ async def _download_spotify_track(cdn_url: str, hex_key: str, track_id: str) -> 
         async with aiofiles.open(enc_path, "wb") as f:
             await f.write(raw)
 
-        # 2. Decrypt
         t0 = time.monotonic()
         decrypted = _decrypt_spotify(raw, hex_key)
         LOGGER.info(f"Spotify decrypt took {(time.monotonic()-t0)*1000:.0f}ms")
 
-        # 3. Rebuild OGG headers in-memory, write decrypted file
         patched = _rebuild_ogg(bytearray(decrypted))
         async with aiofiles.open(dec_path, "wb") as f:
             await f.write(bytes(patched))
 
-        # 4. Re-mux with ffmpeg
         ok = await _fix_ogg_ffmpeg(dec_path, out_ogg)
         if not ok:
-            # Fallback: use the patched file as-is
             os.replace(dec_path, out_ogg)
 
         return out_ogg if os.path.exists(out_ogg) else None
@@ -237,7 +214,6 @@ async def _download_spotify_track(cdn_url: str, hex_key: str, track_id: str) -> 
             except OSError:
                 pass
 
-
 async def _download_direct(cdn_url: str, track_id: str, ext: str = "mp3") -> Optional[str]:
     """Direct (unencrypted) CDN download — used for all non-Spotify platforms."""
     os.makedirs(DOWNLOADS_DIR, exist_ok=True)
@@ -247,8 +223,6 @@ async def _download_direct(cdn_url: str, track_id: str, ext: str = "mp3") -> Opt
         return out_path
     ok = await _stream_to_file(cdn_url, out_path)
     return out_path if ok else None
-
-
 
 class ApiPlatform:
     """
@@ -269,7 +243,6 @@ class ApiPlatform:
     def __init__(self) -> None:
         self._patterns = _PATTERNS
 
-    # ── helpers ────────────────────────────────────────────────
     @property
     def _api_url(self) -> str:
         return config.API_URL2.rstrip("/") if config.API_URL2 else ""
@@ -285,7 +258,6 @@ class ApiPlatform:
     def _headers(self) -> dict:
         return {"X-API-Key": self._api_key, "Accept": "application/json"}
 
-    # ── URL validation ─────────────────────────────────────────
     def valid(self, url: str) -> bool:
         if not url:
             return False
@@ -298,7 +270,6 @@ class ApiPlatform:
         """Return the short platform name for *url*, or empty string."""
         for name, pat in self._patterns.items():
             if pat.match(url.strip()):
-                # normalise sub-patterns
                 if name in ("twitchclip",):
                     return "twitch"
                 if name in ("kickclip",):
@@ -306,7 +277,6 @@ class ApiPlatform:
                 return name
         return ""
 
-    # ── API calls ──────────────────────────────────────────────
     async def _get(self, endpoint: str, params: dict) -> Optional[dict]:
         if not self._ready:
             return None
@@ -371,15 +341,12 @@ class ApiPlatform:
         if not results:
             return None
 
-        # First result is the primary track
         song = results[0]
         track_id = song.get("id") or url
         duration_sec = song.get("duration") or 0
-        # duration is int seconds from the API (MusicTrack.Duration)
         if isinstance(duration_sec, int) and duration_sec > 0:
             duration_min = seconds_to_min(duration_sec)
         else:
-            # No duration info -> treat as live stream (None triggers live-confirm UI)
             duration_min = None
 
         details = {
@@ -390,7 +357,6 @@ class ApiPlatform:
             "thumb":        song.get("thumbnail") or "",
             "channel":      song.get("channel") or "",
             "views":        song.get("views") or "",
-            # keep original url so download() can call /api/track correctly
             "_url":         url,
         }
         return details, track_id
@@ -418,17 +384,12 @@ class ApiPlatform:
         for t in raw:
             if not isinstance(t, dict):
                 continue
-            # Try every common title field the API may return.
-            # Go's MusicTrack.Title maps to JSON "title"; some wrappers use "name".
             title = (
                 t.get("title")
                 or t.get("name")
                 or t.get("track_name")
                 or ""
             )
-            # Don't skip tracks with no title — use a placeholder so the queue
-            # entry is visible and can still be played (matches Go behaviour which
-            # shows a blank name rather than silently dropping the track).
             if not title:
                 title = "Unknown Track"
             tracks.append({
@@ -459,12 +420,6 @@ class ApiPlatform:
         if not data:
             return None
         tracks = self._extract_music_tracks(data)
-        # IMPORTANT: always return the original full URL as plist_id.
-        # The API may return a bare track ID (e.g. "7BwnuRzwTSFOGHryGIfp9b") in
-        # data["id"], but the callback handler stores this value in lyrical[] and
-        # later re-fetches with Spotify.playlist(videoid). A bare ID is NOT a valid
-        # URL for /api/get_url — the API rejects it, returns None, result = [],
-        # and stream() exits silently with count == 0. Always use the original URL.
         return tracks, url
 
     async def album(self, url: str) -> Optional[tuple[list[dict], str]]:
@@ -477,10 +432,8 @@ class ApiPlatform:
         if not data:
             return None
         tracks = self._extract_music_tracks(data)
-        # Same fix: always return the original URL.
         return tracks, url
 
-    # ── Download ───────────────────────────────────────────────
     @error_logger(label="API Track Download")
     async def download(self, url: str, video: bool = False) -> Optional[str]:
         """
@@ -500,7 +453,6 @@ class ApiPlatform:
             LOGGER.error(f"API-2: get_track returned nothing for {url}")
             return None
 
-        # TrackInfo fields: id, url (original), cdnurl (CDN download URL), key, platform
         cdn_url: str = info.get("cdnurl") or info.get("cdn_url") or info.get("url") or ""
         if not cdn_url:
             LOGGER.error(f"API-2: no CDN URL in track info for {url}")
