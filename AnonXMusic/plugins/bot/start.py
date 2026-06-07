@@ -23,7 +23,6 @@ from AnonXMusic.utils.inline import help_pannel, private_panel, start_panel
 from config import BANNED_USERS
 from strings import get_string
 
-
 @app.on_message(filters.command("start") & filters.private & ~BANNED_USERS)
 @LanguageStart
 async def start_pm(client, message: Message, _):
@@ -91,7 +90,6 @@ async def start_pm(client, message: Message, _):
                 )
             return
 
-    # Default private start
     await message.reply_photo(
         photo=config.START_IMG_URL,
         caption=_["start_2"].format(message.from_user.mention, app.mention),
@@ -108,7 +106,6 @@ async def start_pm(client, message: Message, _):
             ),
         )
 
-
 @app.on_message(filters.command("start") & filters.group & ~BANNED_USERS)
 @LanguageStart
 async def start_gp(client, message: Message, _):
@@ -119,7 +116,6 @@ async def start_gp(client, message: Message, _):
         reply_markup=InlineKeyboardMarkup(start_panel(_)),
     )
     await add_served_chat(message.chat.id)
-
 
 @app.on_message(filters.new_chat_members, group=-1)
 async def welcome(client, message: Message):
