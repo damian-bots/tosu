@@ -1218,12 +1218,14 @@ class YouTubeAPI:
             if songvideo:
                 await asyncio.wait_for(loop.run_in_executor(None, song_video_dl), timeout=PROCESS_TIMEOUT)
                 _inc("success"); _inc("success_video")
-                return f"downloads/{title_str}.mp4"
+                fpath = f"downloads/{title_str}.mp4"
+                return fpath
 
             if songaudio:
                 await asyncio.wait_for(loop.run_in_executor(None, song_audio_dl), timeout=PROCESS_TIMEOUT)
                 _inc("success"); _inc("success_audio")
-                return f"downloads/{title_str}.mp3"
+                fpath = f"downloads/{title_str}.mp3"
+                return fpath
 
             if video:
                 if await is_on_off(1):
