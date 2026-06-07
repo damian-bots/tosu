@@ -337,9 +337,20 @@ class Call(PyTgCalls):
         except NoActiveGroupCall:
             raise AssistantErr(_["call_8"])
         except AlreadyJoinedError:
-            raise AssistantErr(_["call_9"])
+            # Assistant is already in the call — try to switch the stream
+            # instead of failing. This handles the case where the bot thinks
+            # there's no active call but the assistant is actually connected.
+            try:
+                await assistant.change_stream(chat_id, stream)
+            except Exception:
+                raise AssistantErr(_["call_9"])
         except TelegramServerError:
             raise AssistantErr(_["call_10"])
+        except Exception as e:
+            err_str = str(e).lower()
+            if "groupcall" in err_str and ("invalid" in err_str or "id" in err_str):
+                raise AssistantErr(_["call_11"])
+            raise
         await add_active_chat(chat_id)
         await music_on(chat_id)
         if video:
@@ -441,9 +452,37 @@ class Call(PyTgCalls):
                         video=True if str(streamtype) == "video" else False,
                     )
                 except:
-                    return await mystic.edit_text(
-                        _["call_6"], disable_web_page_preview=True
-                    )
+                    file_path = None
+                    direct = False
+                if not file_path:
+                    # Download failed — auto-skip to next queue entry
+                    try:
+                        await mystic.delete()
+                    except Exception:
+                        pass
+                    remaining = db.get(chat_id)
+                    if remaining and len(remaining) > 1:
+                        await _safe_tg_call(
+                            app.send_message,
+                            original_chat_id,
+                            _["call_queue_fail"],
+                        )
+                        try:
+                            remaining.pop(0)
+                        except Exception:
+                            pass
+                        return await self.change_stream(client, chat_id)
+                    else:
+                        await _clear_(chat_id)
+                        try:
+                            await client.leave_group_call(chat_id)
+                        except Exception:
+                            pass
+                        return await _safe_tg_call(
+                            app.send_message,
+                            original_chat_id,
+                            _["call_queue_end"],
+                        )
                 if video:
                     stream = AudioVideoPiped(
                         file_path,

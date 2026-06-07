@@ -17,14 +17,11 @@ async def ping_com(client, message: Message, _):
     start = datetime.now()
     response = await message.reply_photo(
         photo=PING_IMG_URL,
-        caption=_["ping_1"].format(app.mention),
+        caption=_["ping_1"],
     )
     pytgping = await Anony.ping()
     UP, CPU, RAM, DISK = await bot_sys_stats()
-    
-    # FIXED: Using total_seconds() to accurately capture delays over 1 second
     resp = round((datetime.now() - start).total_seconds() * 1000, 3)
-    
     await response.edit_text(
         _["ping_2"].format(resp, app.mention, UP, RAM, CPU, DISK, pytgping),
         reply_markup=supp_markup(_),

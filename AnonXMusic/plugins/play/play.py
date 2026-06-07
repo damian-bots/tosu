@@ -564,6 +564,13 @@ async def play_commnd(
                         _["play_13"],
                         reply_markup=InlineKeyboardMarkup(buttons),
                     )
+        # Update the processing message to show what's being downloaded
+        if streamtype == "youtube" and not plist_type and isinstance(details, dict):
+            _title = (details.get("title") or "track").title()
+            try:
+                await mystic.edit_text(_["play_dl_status"].format(_title))
+            except Exception:
+                pass
         try:
             await stream(
                 _,
@@ -582,7 +589,13 @@ async def play_commnd(
             ex_type = type(e).__name__
             err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
             return await mystic.edit_text(err)
-        await mystic.delete()
+        # stream.py edits mystic into the Now Playing card for non-queue streams,
+        # so we only delete it if it was queued (still a text message at this point).
+        try:
+            if mystic and not getattr(mystic, "_photo_edited", False):
+                await mystic.delete()
+        except Exception:
+            pass
         return await play_logs(message, streamtype=streamtype)
     else:
         if plist_type:
