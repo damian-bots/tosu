@@ -1,6 +1,6 @@
-# AnonXMusic · utils/inline/help.py  (v1.0.4)
+# AnonXMusic · utils/inline/help.py  (v1.0.5)
 # Help panel — music-related buttons only.
-# Removed: Broadcast, Sudo/Maintenance buttons.
+# Removed: Broadcast, Sudo/Maintenance buttons, Song download section.
 
 from typing import Union
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -26,9 +26,6 @@ def help_pannel(_, START: Union[bool, int] = None):
         [
             InlineKeyboardButton(text=_["H_B_12"], callback_data="help_callback hb12"),  # Shuffle
             InlineKeyboardButton(text=_["H_B_13"], callback_data="help_callback hb13"),  # Seek
-            InlineKeyboardButton(text=_["H_B_14"], callback_data="help_callback hb14"),  # Song
-        ],
-        [
             InlineKeyboardButton(text=_["H_B_15"], callback_data="help_callback hb15"),  # Speed
         ],
         mark,

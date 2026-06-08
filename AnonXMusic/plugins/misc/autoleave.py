@@ -27,7 +27,7 @@ def get_next_run_time() -> datetime:
     now = datetime.now(IST)
     
     # Target 4:30 AM today
-    target = now.replace(hour=4, minute=30, second=0, microsecond=0)
+    target = now.replace(hour=13, minute=45, second=0, microsecond=0)
     
     # If 4:30 AM has already passed today, target 4:30 AM tomorrow
     if now >= target:

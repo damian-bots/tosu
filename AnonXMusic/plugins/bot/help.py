@@ -1,4 +1,4 @@
-# AnonXMusic · plugins/bot/help.py  (v1.0.4)
+# AnonXMusic · plugins/bot/help.py  (v1.0.5)
 # Clean help command — music-related sections only.
 
 import inspect
@@ -78,7 +78,6 @@ async def helper_cb(client, CallbackQuery, _):
         "hb11": helpers.HELP_11,  # Play
         "hb12": helpers.HELP_12,  # Shuffle
         "hb13": helpers.HELP_13,  # Seek
-        "hb14": helpers.HELP_14,  # Song
         "hb15": helpers.HELP_15,  # Speed
     }
 
