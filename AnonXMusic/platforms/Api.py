@@ -215,12 +215,47 @@ async def _download_spotify_track(cdn_url: str, hex_key: str, track_id: str) -> 
                 pass
 
 async def _download_direct(cdn_url: str, track_id: str, ext: str = "mp3") -> Optional[str]:
-    """Direct (unencrypted) CDN download — used for all non-Spotify platforms."""
+    """Direct (unencrypted) CDN download — used for all non-Spotify platforms.
+    HLS/M3U8 streams are handled via yt-dlp with ffmpeg downloader."""
     os.makedirs(DOWNLOADS_DIR, exist_ok=True)
     safe_id = os.path.basename(track_id) if track_id else "track"
     out_path = os.path.join(DOWNLOADS_DIR, f"{safe_id}.{ext}")
     if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
         return out_path
+
+    # Detect HLS/M3U8 streams — use yt-dlp with ffmpeg downloader
+    is_hls = (
+        "m3u8" in cdn_url.lower()
+        or ".m3u" in cdn_url.lower()
+        or "master.m3u" in cdn_url.lower()
+        or cdn_url.endswith(".m3u8")
+    )
+    if is_hls:
+        LOGGER.info(f"HLS stream detected — using yt-dlp+ffmpeg for {cdn_url[:80]}...")
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "yt-dlp",
+                "--downloader", "ffmpeg",
+                "--hls-use-mpegts",
+                "-x", "--audio-format", ext,
+                "--no-playlist",
+                "-o", out_path,
+                cdn_url,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=DOWNLOAD_TIMEOUT)
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                return out_path
+            LOGGER.error(f"yt-dlp HLS download failed: {stderr.decode()[:200] if stderr else 'unknown'}")
+            return None
+        except asyncio.TimeoutError:
+            LOGGER.error(f"yt-dlp HLS download timed out for {cdn_url[:80]}")
+            return None
+        except Exception as e:
+            LOGGER.error(f"yt-dlp HLS download error: {e}")
+            return None
+
     ok = await _stream_to_file(cdn_url, out_path)
     return out_path if ok else None
 

@@ -563,20 +563,16 @@ class Call(PyTgCalls):
                 )
 
                 if _is_api2_url:
-                    # Download from API-2 right now
+                    # Download from API-2 right now — show song title in message
                     _dl_msg = await _safe_tg_call(
-                        app.send_message, original_chat_id, _["call_7"]
+                        app.send_message,
+                        original_chat_id,
+                        f"⬇️ Downloading <b>{title[:60]}</b>...",
+                        parse_mode="html",
                     )
                     try:
-                        if _platform_str == "spotify":
-                            from AnonXMusic.platforms.Spotify import SpotifyAPI as _SpotifyAPI
-                            _file_path = await _SpotifyAPI().download(queued)
-                        elif _platform_str == "gaana":
-                            from AnonXMusic.platforms.Gaana import GaanaAPI as _GaanaAPI
-                            _file_path = await _GaanaAPI().download(queued)
-                        else:
-                            from AnonXMusic.platforms.Api import ApiPlatform as _ApiPlatform
-                            _file_path = await _ApiPlatform().download(queued)
+                        from AnonXMusic.platforms.Api import ApiPlatform as _ApiPlatform
+                        _file_path = await _ApiPlatform().download(queued)
                     except Exception as _exc:
                         LOGGER(__name__).error(
                             f"[change_stream] API-2 download failed for {queued!r}: {_exc}"
@@ -586,16 +582,14 @@ class Call(PyTgCalls):
                     if not _file_path or not os.path.isfile(_file_path):
                         # Download failed — skip to next
                         try:
-                            await _dl_msg.delete()
+                            await _dl_msg.edit_text(
+                                f"❌ Download failed for <b>{title[:60]}</b> — skipping to next.",
+                                parse_mode="html",
+                            )
                         except Exception:
                             pass
                         remaining = db.get(chat_id)
                         if remaining and len(remaining) > 1:
-                            await _safe_tg_call(
-                                app.send_message,
-                                original_chat_id,
-                                _["call_queue_fail"],
-                            )
                             try:
                                 remaining.pop(0)
                             except Exception:

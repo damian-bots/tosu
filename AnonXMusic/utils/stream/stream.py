@@ -341,6 +341,14 @@ async def stream(
                 #       change_stream will handle downloading it when needed
 
             # ── Queue or start ────────────────────────────────────────────────
+            # For API-2 platform tracks, store the platform name as streamtype
+            # so change_stream() can detect and download them on-demand.
+            _queue_streamtype = (
+                platform
+                if platform and platform not in ("youtube", "yt_search", "spotipy_yt", "")
+                else ("video" if video else "audio")
+            )
+
             try:
                 if await is_active_chat(chat_id):
                     await put_queue(
@@ -352,7 +360,8 @@ async def stream(
                         user_name,
                         vidid,
                         user_id,
-                        "video" if video else "audio",
+                        _queue_streamtype,
+                        thumbnail=thumbnail,
                     )
                     position = len(db.get(chat_id)) - 1
                     count += 1
@@ -400,6 +409,7 @@ async def stream(
                         user_id,
                         "video" if video else "audio",
                         forceplay=forceplay,
+                        thumbnail=thumbnail,
                     )
                     img = (
                         await get_thumb(vidid)
