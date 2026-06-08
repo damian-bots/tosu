@@ -1,3 +1,6 @@
+# AnonXMusic · plugins/bot/help.py  (v1.0.4)
+# Clean help command — music-related sections only.
+
 import inspect
 from typing import Union
 
@@ -12,7 +15,6 @@ from AnonXMusic.utils.inline.help import help_back_markup, private_help_panel
 from config import BANNED_USERS, START_IMG_URL, SUPPORT_CHAT
 from strings import get_string, helpers
 
-# Detect once at startup whether this Pyrogram build supports message effects.
 _EFFECT_SUPPORTED = "effect_id" in inspect.signature(
     __import__("pyrogram").types.Message.reply_photo
 ).parameters
@@ -23,35 +25,33 @@ _EFFECT_SUPPORTED = "effect_id" in inspect.signature(
 async def helper_private(
     client: app, update: Union[types.Message, types.CallbackQuery]
 ):
-    is_callback = isinstance(update, types.CallbackQuery)
-    if is_callback:
+    is_cb = isinstance(update, types.CallbackQuery)
+    if is_cb:
         try:
             await update.answer()
-        except:
+        except Exception:
             pass
-        chat_id = update.message.chat.id
+        chat_id  = update.message.chat.id
         language = await get_lang(chat_id)
-        _ = get_string(language)
+        _        = get_string(language)
         keyboard = help_pannel(_, True)
-        await update.edit_message_text(
-            _["help_1"].format(SUPPORT_CHAT), reply_markup=keyboard
-        )
+        await update.edit_message_text(_["help_1"].format(SUPPORT_CHAT), reply_markup=keyboard)
     else:
         try:
             await update.delete()
-        except:
+        except Exception:
             pass
         language = await get_lang(update.chat.id)
-        _ = get_string(language)
+        _        = get_string(language)
         keyboard = help_pannel(_)
-        _help_kwargs = dict(
+        kwargs   = dict(
             photo=START_IMG_URL,
             caption=_["help_1"].format(SUPPORT_CHAT),
             reply_markup=keyboard,
         )
         if _EFFECT_SUPPORTED:
-            _help_kwargs["effect_id"] = 5159385139981059251
-        await update.reply_photo(**_help_kwargs)
+            kwargs["effect_id"] = 5159385139981059251
+        await update.reply_photo(**kwargs)
 
 
 @app.on_message(filters.command(["help"]) & filters.group & ~BANNED_USERS)
@@ -64,36 +64,26 @@ async def help_com_group(client, message: Message, _):
 @app.on_callback_query(filters.regex("help_callback") & ~BANNED_USERS)
 @languageCB
 async def helper_cb(client, CallbackQuery, _):
-    callback_data = CallbackQuery.data.strip()
-    cb = callback_data.split(None, 1)[1]
+    cb_data = CallbackQuery.data.strip()
+    cb      = cb_data.split(None, 1)[1]
     keyboard = help_back_markup(_)
-    if cb == "hb1":
-        await CallbackQuery.edit_message_text(helpers.HELP_1, reply_markup=keyboard)
-    elif cb == "hb2":
-        await CallbackQuery.edit_message_text(helpers.HELP_2, reply_markup=keyboard)
-    elif cb == "hb3":
-        await CallbackQuery.edit_message_text(helpers.HELP_3, reply_markup=keyboard)
-    elif cb == "hb4":
-        await CallbackQuery.edit_message_text(helpers.HELP_4, reply_markup=keyboard)
-    elif cb == "hb5":
-        await CallbackQuery.edit_message_text(helpers.HELP_5, reply_markup=keyboard)
-    elif cb == "hb6":
-        await CallbackQuery.edit_message_text(helpers.HELP_6, reply_markup=keyboard)
-    elif cb == "hb7":
-        await CallbackQuery.edit_message_text(helpers.HELP_7, reply_markup=keyboard)
-    elif cb == "hb8":
-        await CallbackQuery.edit_message_text(helpers.HELP_8, reply_markup=keyboard)
-    elif cb == "hb9":
-        await CallbackQuery.edit_message_text(helpers.HELP_9, reply_markup=keyboard)
-    elif cb == "hb10":
-        await CallbackQuery.edit_message_text(helpers.HELP_10, reply_markup=keyboard)
-    elif cb == "hb11":
-        await CallbackQuery.edit_message_text(helpers.HELP_11, reply_markup=keyboard)
-    elif cb == "hb12":
-        await CallbackQuery.edit_message_text(helpers.HELP_12, reply_markup=keyboard)
-    elif cb == "hb13":
-        await CallbackQuery.edit_message_text(helpers.HELP_13, reply_markup=keyboard)
-    elif cb == "hb14":
-        await CallbackQuery.edit_message_text(helpers.HELP_14, reply_markup=keyboard)
-    elif cb == "hb15":
-        await CallbackQuery.edit_message_text(helpers.HELP_15, reply_markup=keyboard)
+
+    # Music-related help pages only
+    _pages = {
+        "hb1":  helpers.HELP_1,   # Admin
+        "hb2":  helpers.HELP_2,   # Auth
+        "hb6":  helpers.HELP_6,   # Channel Play
+        "hb8":  helpers.HELP_8,   # Loop
+        "hb10": helpers.HELP_10,  # Ping & Stats
+        "hb11": helpers.HELP_11,  # Play
+        "hb12": helpers.HELP_12,  # Shuffle
+        "hb13": helpers.HELP_13,  # Seek
+        "hb14": helpers.HELP_14,  # Song
+        "hb15": helpers.HELP_15,  # Speed
+    }
+
+    text = _pages.get(cb)
+    if text:
+        await CallbackQuery.edit_message_text(text, reply_markup=keyboard)
+    else:
+        await CallbackQuery.answer("Section not available.", show_alert=True)
