@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Union
 
 from pyrogram import Client
-from pyrogram.types import InlineKeyboardMarkup
+from pyrogram.types import InlineKeyboardMarkup, InputMediaPhoto
 from pytgcalls import PyTgCalls, StreamType
 from pytgcalls.exceptions import (
     AlreadyJoinedError,
@@ -38,6 +38,61 @@ async def _safe_tg_call(coro_fn, *args, retries: int = 4, base_delay: float = 3.
                 raise
         except Exception:
             raise
+
+
+async def _send_now_playing(
+    original_chat_id: int,
+    photo: str,
+    caption: str,
+    button,
+    *,
+    send_hold_first: bool = True,
+    hold_text: str = "⏳ Loading next track...",
+) -> object:
+    """
+    Spotify3-style send-then-edit pattern for Now Playing cards.
+
+    1. Send a plain text "Hold on…" message.
+    2. Edit it in-place to a photo card (started-streaming style).
+    3. Fall back to send_photo if edit fails.
+
+    Returns the final Message object.
+    """
+    mystic = None
+    if send_hold_first:
+        try:
+            mystic = await _safe_tg_call(
+                app.send_message,
+                original_chat_id,
+                hold_text,
+            )
+        except Exception:
+            mystic = None
+
+    if mystic is not None:
+        try:
+            run = await mystic.edit_message_media(
+                media=InputMediaPhoto(media=photo, caption=caption),
+                reply_markup=InlineKeyboardMarkup(button),
+            )
+            return run
+        except Exception:
+            # edit failed — fall through to send_photo
+            try:
+                await mystic.delete()
+            except Exception:
+                pass
+
+    # Fallback: direct send_photo
+    return await _safe_tg_call(
+        app.send_photo,
+        chat_id=original_chat_id,
+        photo=photo,
+        caption=caption,
+        reply_markup=InlineKeyboardMarkup(button),
+    )
+
+
 from AnonXMusic.misc import db
 from AnonXMusic.utils.database import (
     add_active_chat,
@@ -337,9 +392,7 @@ class Call(PyTgCalls):
         except NoActiveGroupCall:
             raise AssistantErr(_["call_8"])
         except AlreadyJoinedError:
-            # Assistant is already in the call — try to switch the stream
-            # instead of failing. This handles the case where the bot thinks
-            # there's no active call but the assistant is actually connected.
+            # Assistant already in the call — try to switch the stream instead.
             try:
                 await assistant.change_stream(chat_id, stream)
             except Exception:
@@ -399,6 +452,12 @@ class Call(PyTgCalls):
                 db[chat_id][0]["speed_path"] = None
                 db[chat_id][0]["speed"] = 1.0
             video = True if str(streamtype) == "video" else False
+
+            # ── Spotify3-style: send a "Hold on…" text first, then edit to
+            # the Now Playing photo card so each track transition feels smooth.
+            hold_text = _["call_7"]  # "Hold on — downloading the next track in queue..."
+            button = stream_markup(_, chat_id)
+
             if "live_" in queued:
                 n, link = await YouTube.video(videoid, True)
                 if n == 0:
@@ -427,27 +486,28 @@ class Call(PyTgCalls):
                         text=_["call_6"],
                     )
                 img = await get_thumb(videoid)
-                button = stream_markup(_, chat_id)
-                run = await _safe_tg_call(
-                    app.send_photo,
-                    chat_id=original_chat_id,
-                    photo=img,
-                    caption=_["stream_1"].format(
-                        f"https://youtube.com/watch?v={videoid}",
-                        title[:23],
-                        check[0]["dur"],
-                        user,
-                    ),
-                    reply_markup=InlineKeyboardMarkup(button),
+                caption = _["stream_1"].format(
+                    f"https://youtube.com/watch?v={videoid}",
+                    title[:23],
+                    check[0]["dur"],
+                    user,
+                )
+                run = await _send_now_playing(
+                    original_chat_id, img, caption, button,
+                    hold_text=hold_text,
                 )
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "tg"
+
             elif "vid_" in queued:
-                mystic = await _safe_tg_call(app.send_message, original_chat_id, _["call_7"])
+                # Send "Hold on…" immediately before the potentially slow download
+                hold_msg = await _safe_tg_call(
+                    app.send_message, original_chat_id, hold_text
+                )
                 try:
                     file_path, direct = await YouTube.download(
                         videoid,
-                        mystic,
+                        hold_msg,
                         videoid=True,
                         video=True if str(streamtype) == "video" else False,
                     )
@@ -455,9 +515,8 @@ class Call(PyTgCalls):
                     file_path = None
                     direct = False
                 if not file_path:
-                    # Download failed — auto-skip to next queue entry
                     try:
-                        await mystic.delete()
+                        await hold_msg.delete()
                     except Exception:
                         pass
                     remaining = db.get(chat_id)
@@ -503,22 +562,33 @@ class Call(PyTgCalls):
                         text=_["call_6"],
                     )
                 img = await get_thumb(videoid)
-                button = stream_markup(_, chat_id)
-                await mystic.delete()
-                run = await _safe_tg_call(
-                    app.send_photo,
-                    chat_id=original_chat_id,
-                    photo=img,
-                    caption=_["stream_1"].format(
-                        f"https://youtube.com/watch?v={videoid}",
-                        title[:23],
-                        check[0]["dur"],
-                        user,
-                    ),
-                    reply_markup=InlineKeyboardMarkup(button),
+                caption = _["stream_1"].format(
+                    f"https://youtube.com/watch?v={videoid}",
+                    title[:23],
+                    check[0]["dur"],
+                    user,
                 )
+                # Edit the hold_msg to the Now Playing card (Spotify3 style)
+                try:
+                    run = await hold_msg.edit_message_media(
+                        media=InputMediaPhoto(media=img, caption=caption),
+                        reply_markup=InlineKeyboardMarkup(button),
+                    )
+                except Exception:
+                    try:
+                        await hold_msg.delete()
+                    except Exception:
+                        pass
+                    run = await _safe_tg_call(
+                        app.send_photo,
+                        chat_id=original_chat_id,
+                        photo=img,
+                        caption=caption,
+                        reply_markup=InlineKeyboardMarkup(button),
+                    )
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "stream"
+
             elif "index_" in queued:
                 stream = (
                     AudioVideoPiped(
@@ -537,21 +607,19 @@ class Call(PyTgCalls):
                         original_chat_id,
                         text=_["call_6"],
                     )
-                button = stream_markup(_, chat_id)
-                run = await _safe_tg_call(
-                    app.send_photo,
-                    chat_id=original_chat_id,
-                    photo=config.STREAM_IMG_URL,
-                    caption=_["stream_2"].format(user),
-                    reply_markup=InlineKeyboardMarkup(button),
+                caption = _["stream_2"].format(user)
+                run = await _send_now_playing(
+                    original_chat_id,
+                    config.STREAM_IMG_URL,
+                    caption,
+                    button,
+                    hold_text=hold_text,
                 )
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "tg"
+
             else:
-                # ── Handle API-2 platform tracks queued as URLs ───────────────
-                # When a Spotify/Gaana/etc. playlist is queued, tracks may be stored
-                # as platform URLs (e.g. https://open.spotify.com/track/...) rather
-                # than local file paths.  We need to download them at play time.
+                # ── API-2 platform tracks queued as URLs ──────────────────────
                 _api2_platforms = {
                     "spotify", "gaana", "jiosaavn", "deezer", "apple",
                     "tidal", "soundcloud_api", "soundcloud",
@@ -563,12 +631,11 @@ class Call(PyTgCalls):
                 )
 
                 if _is_api2_url:
-                    # Download from API-2 right now — show song title in message
-                    _dl_msg = await _safe_tg_call(
+                    # Send the hold message before the potentially slow API download
+                    hold_msg = await _safe_tg_call(
                         app.send_message,
                         original_chat_id,
-                        f"⬇️ Downloading <b>{title[:60]}</b>...",
-                        parse_mode="html",
+                        hold_text,
                     )
                     try:
                         from AnonXMusic.platforms.Api import ApiPlatform as _ApiPlatform
@@ -580,9 +647,8 @@ class Call(PyTgCalls):
                         _file_path = None
 
                     if not _file_path or not os.path.isfile(_file_path):
-                        # Download failed — skip to next
                         try:
-                            await _dl_msg.edit_text(
+                            await hold_msg.edit_text(
                                 f"❌ Download failed for <b>{title[:60]}</b> — skipping to next.",
                                 parse_mode="html",
                             )
@@ -607,15 +673,9 @@ class Call(PyTgCalls):
                                 _["call_queue_end"],
                             )
 
-                    # Update queue entry with local path
                     db[chat_id][0]["file"] = _file_path
                     queued = _file_path
-                    try:
-                        await _dl_msg.delete()
-                    except Exception:
-                        pass
 
-                # Guard: local file must exist
                 elif not queued.startswith("http") and not os.path.isfile(queued):
                     _platform = check[0].get("streamtype") or "Unknown"
                     return await _safe_tg_call(
@@ -644,41 +704,22 @@ class Call(PyTgCalls):
                         text=_["call_6"],
                     )
 
-                # ── Now Playing card — always a NEW message (not edit) ────────
-                # change_stream is only called for tracks 2, 3, … in the queue.
-                # The first track's mystic is handled by stream.py via
-                # _edit_or_send_photo (edits text → photo).  For subsequent tracks
-                # we always send a fresh photo so each track gets its own card.
-                button = stream_markup(_, chat_id)
-
+                # Build caption and image
                 if videoid == "telegram":
-                    run = await _safe_tg_call(
-                        app.send_photo,
-                        chat_id=original_chat_id,
-                        photo=config.TELEGRAM_AUDIO_URL
+                    img = (
+                        config.TELEGRAM_AUDIO_URL
                         if str(streamtype) == "audio"
-                        else config.TELEGRAM_VIDEO_URL,
-                        caption=_["stream_1"].format(
-                            config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
-                        ),
-                        reply_markup=InlineKeyboardMarkup(button),
+                        else config.TELEGRAM_VIDEO_URL
                     )
-                    db[chat_id][0]["mystic"] = run
-                    db[chat_id][0]["markup"] = "tg"
+                    caption = _["stream_1"].format(
+                        config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
+                    )
                 elif videoid == "soundcloud":
-                    run = await _safe_tg_call(
-                        app.send_photo,
-                        chat_id=original_chat_id,
-                        photo=config.SOUNCLOUD_IMG_URL,
-                        caption=_["stream_1"].format(
-                            config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
-                        ),
-                        reply_markup=InlineKeyboardMarkup(button),
+                    img = config.SOUNCLOUD_IMG_URL
+                    caption = _["stream_1"].format(
+                        config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
                     )
-                    db[chat_id][0]["mystic"] = run
-                    db[chat_id][0]["markup"] = "tg"
                 elif _platform_str in _api2_platforms:
-                    # API-2 platform: use thumbnail from queue, fall back to platform image
                     _thumb = check[0].get("thumbnail") or ""
                     _link  = check[0].get("file") or ""
                     _img_map = {
@@ -691,37 +732,50 @@ class Call(PyTgCalls):
                         "soundcloud_api": config.SOUNCLOUD_IMG_URL,
                         "soundcloud":     config.SOUNCLOUD_IMG_URL,
                     }
-                    _cover = _thumb or _img_map.get(_platform_str, config.PLAYLIST_IMG_URL)
-                    run = await _safe_tg_call(
-                        app.send_photo,
-                        chat_id=original_chat_id,
-                        photo=_cover,
-                        caption=_["stream_1"].format(
-                            _link or config.SUPPORT_CHAT,
-                            title[:23],
-                            check[0]["dur"],
-                            user,
-                        ),
-                        reply_markup=InlineKeyboardMarkup(button),
+                    img = _thumb or _img_map.get(_platform_str, config.PLAYLIST_IMG_URL)
+                    caption = _["stream_1"].format(
+                        _link or config.SUPPORT_CHAT,
+                        title[:23],
+                        check[0]["dur"],
+                        user,
                     )
-                    db[chat_id][0]["mystic"] = run
-                    db[chat_id][0]["markup"] = "tg"
                 else:
                     img = await get_thumb(videoid)
-                    run = await _safe_tg_call(
-                        app.send_photo,
-                        chat_id=original_chat_id,
-                        photo=img,
-                        caption=_["stream_1"].format(
-                            f"https://youtube.com/watch?v={videoid}",
-                            title[:23],
-                            check[0]["dur"],
-                            user,
-                        ),
-                        reply_markup=InlineKeyboardMarkup(button),
+                    caption = _["stream_1"].format(
+                        f"https://youtube.com/watch?v={videoid}",
+                        title[:23],
+                        check[0]["dur"],
+                        user,
                     )
-                    db[chat_id][0]["mystic"] = run
-                    db[chat_id][0]["markup"] = "stream"
+
+                # Spotify3 send-then-edit for API-2 tracks (hold_msg already sent above)
+                if _is_api2_url:
+                    try:
+                        run = await hold_msg.edit_message_media(
+                            media=InputMediaPhoto(media=img, caption=caption),
+                            reply_markup=InlineKeyboardMarkup(button),
+                        )
+                    except Exception:
+                        try:
+                            await hold_msg.delete()
+                        except Exception:
+                            pass
+                        run = await _safe_tg_call(
+                            app.send_photo,
+                            chat_id=original_chat_id,
+                            photo=img,
+                            caption=caption,
+                            reply_markup=InlineKeyboardMarkup(button),
+                        )
+                else:
+                    # Non-API2 local files: send-then-edit pattern
+                    run = await _send_now_playing(
+                        original_chat_id, img, caption, button,
+                        hold_text=hold_text,
+                    )
+
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "stream"
 
     async def ping(self):
         pings = []

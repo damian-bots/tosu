@@ -71,6 +71,9 @@ class GaanaAPI:
 
         cdn_url: str = (
             info.get("cdnurl")
+            or info.get("cdn_url")
+            or info.get("url")
+            or ""
         )
         if not cdn_url:
             LOGGER.error(f"Gaana: no CDN URL in /api/track response for {url}. Response: {info}")
