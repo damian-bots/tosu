@@ -27,19 +27,30 @@ LOGGER = logging.getLogger(__name__)
 
 async def _edit_or_send_photo(mystic, app, original_chat_id, photo, caption, button):
     """
-    Try to convert the existing text message (mystic) into a Now Playing photo
-    via edit_message_media. Falls back to app.send_photo() if that fails for
-    any reason (e.g. mystic is None, message too old, no media allowed, etc.).
+    Convert the existing text message (mystic) into a Now Playing photo card.
 
-    Returns the resulting message object.
+    Rules (matching TgMusicBot behaviour):
+    - First track: edit mystic text → photo via edit_message_media.
+      If edit fails (message too old, already a photo, etc.) → send_photo fallback.
+    - Subsequent tracks (next in queue): always send a new photo message.
+      This is handled by change_stream() in call.py which calls app.send_photo
+      directly, not this helper.  This helper is only called from stream.py for
+      the *first* track.
+
+    Returns the resulting message object (used as db[chat_id][0]["mystic"]).
     """
     run = None
-    if mystic is not None:
+    # Only attempt to edit if mystic is a text message (not already a photo card).
+    # A photo-edited mystic has _photo_edited=True set below; if already set we
+    # skip the edit and send fresh — prevents double-editing on repeated calls.
+    already_used = getattr(mystic, "_photo_edited", False) if mystic else True
+    if mystic is not None and not already_used:
         try:
             run = await mystic.edit_message_media(
                 media=InputMediaPhoto(media=photo, caption=caption),
                 reply_markup=InlineKeyboardMarkup(button),
             )
+            # Mark so we know this mystic was already converted to a photo
             try:
                 mystic._photo_edited = True
             except Exception:
@@ -81,17 +92,14 @@ async def stream(
         from AnonXMusic.utils.formatters import seconds_to_min
 
         # ── Throttled progress editor ─────────────────────────────────────────
-        # Edits the mystic message at most once every PROGRESS_INTERVAL seconds.
-        # Catches FloodWait transparently — sleeps the required time and retries
-        # once, so the loop is never stuck waiting on a flood.
-        PROGRESS_INTERVAL = 4.0          # minimum seconds between edits
+        PROGRESS_INTERVAL = 4.0
         _last_edit_ts: float = 0.0
 
         async def _progress(text: str) -> None:
             nonlocal _last_edit_ts
             now = _time.monotonic()
             if now - _last_edit_ts < PROGRESS_INTERVAL:
-                return                   # skip — too soon
+                return
             for _attempt in range(2):
                 try:
                     await mystic.edit_text(text, disable_web_page_preview=True)
@@ -101,17 +109,15 @@ async def stream(
                     wait = fw.value + 1
                     LOGGER.warning(f"Playlist progress: FloodWait {wait}s — sleeping")
                     await asyncio.sleep(wait)
-                    _last_edit_ts = _time.monotonic()  # reset after sleep
+                    _last_edit_ts = _time.monotonic()
                 except Exception:
-                    return               # non-fatal — skip this update
+                    return
 
         # ── Step 1: Collect raw track list ────────────────────────────────────
-        # result is either:
-        #   • list[dict]  — from API-2 / spotipy (has title, duration, url …)
-        #   • list[str]   — legacy YouTube search queries (kept for compat)
-        #
-        # spotipy dicts carry _source="spotipy" and no Spotify CDN URL, so they
-        # must be resolved via YouTube search using their title field.
+        # Tracks from API-2 /api/get_url already carry full metadata:
+        #   { title, id, url, thumbnail, duration, platform, _ready=True }
+        # These are processed instantly — no YouTube search needed.
+        # spotipy dicts have _source="spotipy" and need YT resolve.
 
         raw_total   = len(result) if result else 0
         valid_tracks = []
@@ -130,17 +136,35 @@ async def stream(
                 t_title        = raw_track.get("title") or "Unknown"
                 t_duration_sec = int(raw_track.get("duration") or raw_track.get("duration_sec") or 0)
                 t_thumbnail    = raw_track.get("thumbnail") or ""
-                t_vidid        = raw_track.get("id") or raw_track.get("vidid") or raw_track.get("url") or ""
+                t_vidid        = raw_track.get("id") or raw_track.get("vidid") or ""
                 t_platform     = (raw_track.get("platform") or "").lower()
                 t_direct_url   = raw_track.get("url") or raw_track.get("link") or ""
-                t_source       = raw_track.get("_source") or ""   # "spotipy" signals YT-resolve needed
+                t_source       = raw_track.get("_source") or ""
+                t_ready        = raw_track.get("_ready", False)  # set by ApiPlatform.playlist()
+
+                # API-2 tracks with full metadata: title, url, platform, duration all present.
+                # These come from /api/get_url and are _ready — queue immediately, download on play.
+                if t_ready and t_direct_url and t_platform and t_platform not in ("youtube", ""):
+                    if t_duration_sec > 0 and t_duration_sec > config.DURATION_LIMIT:
+                        skipped += 1
+                        continue
+                    t_duration_min = seconds_to_min(t_duration_sec) if t_duration_sec > 0 else "0:00"
+                    valid_tracks.append({
+                        "title":        t_title,
+                        "duration_min": t_duration_min,
+                        "duration_sec": t_duration_sec,
+                        "thumbnail":    t_thumbnail,
+                        "vidid":        t_vidid,
+                        "platform":     t_platform,
+                        "direct_url":   t_direct_url,
+                        "file_ref":     t_direct_url,   # use the track URL directly for API download
+                    })
+                    continue
 
                 # spotipy tracks: no CDN URL — must be resolved via YouTube search
-                # We mark them as youtube platform so the download loop handles them.
                 if t_source == "spotipy" or not t_direct_url or t_platform == "":
-                    # Try to get a proper YouTube ID from the title
-                    t_platform   = "spotipy_yt"   # will be resolved in download loop
-                    t_file_ref   = f"yt_search_{t_title}"   # sentinel
+                    t_platform   = "spotipy_yt"
+                    t_file_ref   = f"yt_search_{t_title}"
                 else:
                     if not t_title:
                         skipped += 1
@@ -153,10 +177,7 @@ async def stream(
                     else:
                         t_file_ref = f"vid_{t_vidid}" if t_vidid else t_direct_url
 
-                if t_duration_sec > 0:
-                    t_duration_min = seconds_to_min(t_duration_sec)
-                else:
-                    t_duration_min = "0:00"
+                t_duration_min = seconds_to_min(t_duration_sec) if t_duration_sec > 0 else "0:00"
 
                 valid_tracks.append({
                     "title":        t_title,
@@ -170,7 +191,6 @@ async def stream(
                 })
 
             elif isinstance(raw_track, str) and raw_track.strip():
-                # Legacy string-based YouTube search query
                 valid_tracks.append({
                     "title":        raw_track,
                     "duration_min": "0:00",
@@ -226,15 +246,12 @@ async def stream(
             file_ref     = track_data["file_ref"]
             thumb        = thumbnail
 
-            # ── Throttled progress update ─────────────────────────────────────
             await _progress(
                 f"🎵 <b>Playlist — {count}/{total} queued</b>\n\n"
                 f"⬇️ Processing <b>{title[:60]}</b>…"
             )
 
-            # ── Resolve tracks that need a YouTube search ─────────────────────
-            # Covers: spotipy tracks, legacy string queries, API-2 tracks with
-            # no CDN URL set, and any track explicitly tagged for YT resolution.
+            # ── Tracks that need a YouTube search ─────────────────────────────
             needs_yt_resolve = (
                 platform in ("spotipy_yt", "yt_search", "youtube", "")
                 or file_ref.startswith("yt_search_")
@@ -242,7 +259,7 @@ async def stream(
             )
 
             if needs_yt_resolve:
-                search_query = title   # already has "Title Artist" from spotipy
+                search_query = title
                 try:
                     (
                         t_title,
@@ -262,7 +279,6 @@ async def stream(
                     failed += 1
                     continue
 
-                # Update with resolved YouTube data
                 title        = t_title
                 duration_min = t_duration_min
                 duration_sec = t_duration_sec
@@ -271,52 +287,58 @@ async def stream(
                 file_ref     = f"vid_{t_vidid}"
                 platform     = "youtube"
 
-            # ── Resolve API-2 CDN URLs for non-YouTube platforms ──────────────
+            # ── API-2 CDN URLs for non-YouTube platforms ──────────────────────
+            # Only download if we need to START playing NOW (chat not active yet).
+            # If already active → queue the track URL and download on change_stream.
             elif (
                 file_ref.startswith("http")
                 and platform
                 and platform not in ("youtube", "")
             ):
-                try:
-                    if platform == "spotify":
-                        resolved = await Spotify.download(file_ref)
-                    else:
-                        from AnonXMusic.platforms.Api import ApiPlatform
-                        resolved = await ApiPlatform().download(file_ref)
-                    if resolved:
-                        if not os.path.isabs(resolved) and not resolved.startswith("http"):
-                            resolved = os.path.join(os.getcwd(), resolved)
-                        file_ref = resolved
-                    else:
-                        LOGGER.warning(
-                            f"Playlist: API-2 download None for {title!r} — "
-                            f"trying YouTube fallback"
-                        )
-                        # Fallback to YouTube search using track title
-                        try:
-                            (
-                                t_title, t_duration_min, t_duration_sec,
-                                t_thumb, t_vidid,
-                            ) = await YouTube.details(title, True)
-                            if str(t_duration_min) != "None":
-                                title        = t_title
-                                duration_min = t_duration_min
-                                vidid        = t_vidid
-                                file_ref     = f"vid_{t_vidid}"
-                                platform     = "youtube"
-                            else:
+                # For queueing: store the URL directly — downloaded on play
+                # For starting first track: download immediately
+                if not await is_active_chat(chat_id):
+                    try:
+                        if platform == "spotify":
+                            resolved = await Spotify.download(file_ref)
+                        else:
+                            from AnonXMusic.platforms.Api import ApiPlatform
+                            resolved = await ApiPlatform().download(file_ref)
+                        if resolved:
+                            if not os.path.isabs(resolved) and not resolved.startswith("http"):
+                                resolved = os.path.join(os.getcwd(), resolved)
+                            file_ref = resolved
+                        else:
+                            LOGGER.warning(
+                                f"Playlist: API-2 download None for {title!r} — "
+                                f"trying YouTube fallback"
+                            )
+                            try:
+                                (
+                                    t_title, t_duration_min, t_duration_sec,
+                                    t_thumb, t_vidid,
+                                ) = await YouTube.details(title, True)
+                                if str(t_duration_min) != "None":
+                                    title        = t_title
+                                    duration_min = t_duration_min
+                                    vidid        = t_vidid
+                                    file_ref     = f"vid_{t_vidid}"
+                                    platform     = "youtube"
+                                else:
+                                    failed += 1
+                                    continue
+                            except Exception:
                                 failed += 1
                                 continue
-                        except Exception:
-                            failed += 1
-                            continue
-                except Exception as exc:
-                    LOGGER.error(
-                        f"Playlist: API-2 error for {title!r}:\n"
-                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
-                    )
-                    failed += 1
-                    continue
+                    except Exception as exc:
+                        LOGGER.error(
+                            f"Playlist: API-2 error for {title!r}:\n"
+                            + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                        )
+                        failed += 1
+                        continue
+                # else: already active → keep file_ref as the platform URL,
+                #       change_stream will handle downloading it when needed
 
             # ── Queue or start ────────────────────────────────────────────────
             try:
@@ -608,6 +630,7 @@ async def stream(
                 chat_id, original_chat_id, file_path, title, duration_min,
                 user_name, streamtype, user_id,
                 "video" if status else "audio",
+                thumbnail=cover_img,
             )
             position = len(db.get(chat_id)) - 1
             button   = aq_markup(_, chat_id)
@@ -627,6 +650,7 @@ async def stream(
                 user_name, streamtype, user_id,
                 "video" if status else "audio",
                 forceplay=forceplay,
+                thumbnail=cover_img,
             )
             button  = stream_markup(_, chat_id)
             caption = _["stream_1"].format(

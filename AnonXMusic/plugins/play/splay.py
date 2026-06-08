@@ -71,7 +71,7 @@ async def splay_command(client, message: Message, _):
     try:
         from AnonXMusic.platforms.Api import ApiPlatform
         api = ApiPlatform()
-        search_result = await api.search(query, limit=5)
+        search_result = await api.search(query, limit=5, platform="spotify")
     except Exception as exc:
         LOGGER.error(
             f"splay: API-2 search failed for {query!r}:\n"

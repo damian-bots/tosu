@@ -1,7 +1,7 @@
 import socket
 import time
 
-__version__ = "1.0.4"
+__version__ = "1.0.1"
 
 import heroku3
 from pyrogram import filters

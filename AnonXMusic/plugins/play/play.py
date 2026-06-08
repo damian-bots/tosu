@@ -255,7 +255,10 @@ async def play_commnd(
                 img = details.get("thumb") or config.SPOTIFY_PLAYLIST_IMG_URL
                 cap = _["play_10"].format(details["title"], details["duration_min"])
             elif "playlist" in url:
-                await mystic.edit_text("🎵 Fetching Spotify playlist...")
+                await mystic.edit_text(
+                    "🎵 <b>Fetching Spotify playlist…</b>\n"
+                    "<i>Usually takes 2-3 seconds via API-2</i>"
+                )
                 try:
                     details, plist_id = await Spotify.playlist(url)
                 except Exception as exc:
@@ -264,7 +267,16 @@ async def play_commnd(
                         f"play.py error in {type(exc).__name__}: {exc}:\n"
                         + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
                     )
-                    return await mystic.edit_text(_["play_3"])
+                    return await mystic.edit_text(
+                        "❌ <b>Failed to fetch Spotify playlist.</b>\n\n"
+                        "The playlist may be private, empty, or the API is temporarily unavailable.\n"
+                        "Please try again."
+                    )
+                if not details:
+                    return await mystic.edit_text(
+                        "❌ <b>Spotify playlist is empty or unavailable.</b>\n\n"
+                        "Make sure the playlist is public and try again."
+                    )
                 total_sp = len(details) if isinstance(details, list) else 0
                 streamtype = "playlist"
                 plist_type = "spplay"
@@ -275,7 +287,10 @@ async def play_commnd(
                     + _["play_11"].format(app.mention, message.from_user.mention)
                 )
             elif "album" in url:
-                await mystic.edit_text("💿 Fetching Spotify album...")
+                await mystic.edit_text(
+                    "💿 <b>Fetching Spotify album…</b>\n"
+                    "<i>Usually takes 2-3 seconds via API-2</i>"
+                )
                 try:
                     details, plist_id = await Spotify.album(url)
                 except Exception as exc:
@@ -284,7 +299,16 @@ async def play_commnd(
                         f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
                         + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
                     )
-                    return await mystic.edit_text(_["play_3"])
+                    return await mystic.edit_text(
+                        "❌ <b>Failed to fetch Spotify album.</b>\n\n"
+                        "The album may be unavailable or the API is temporarily down.\n"
+                        "Please try again."
+                    )
+                if not details:
+                    return await mystic.edit_text(
+                        "❌ <b>Spotify album is empty or unavailable.</b>\n\n"
+                        "Please try again."
+                    )
                 total_sp = len(details) if isinstance(details, list) else 0
                 streamtype = "playlist"
                 plist_type = "spalbum"
@@ -295,7 +319,10 @@ async def play_commnd(
                     + _["play_11"].format(app.mention, message.from_user.mention)
                 )
             elif "artist" in url:
-                await mystic.edit_text("🎤 Fetching Spotify artist top tracks...")
+                await mystic.edit_text(
+                    "🎤 <b>Fetching Spotify artist top tracks…</b>\n"
+                    "<i>Usually takes 2-3 seconds via API-2</i>"
+                )
                 try:
                     details, plist_id = await Spotify.artist(url)
                 except Exception as exc:
@@ -304,7 +331,15 @@ async def play_commnd(
                         f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
                         + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
                     )
-                    return await mystic.edit_text(_["play_3"])
+                    return await mystic.edit_text(
+                        "❌ <b>Failed to fetch Spotify artist tracks.</b>\n\n"
+                        "Please try again."
+                    )
+                if not details:
+                    return await mystic.edit_text(
+                        "❌ <b>No tracks found for this Spotify artist.</b>\n\n"
+                        "Please try again."
+                    )
                 total_sp = len(details) if isinstance(details, list) else 0
                 streamtype = "playlist"
                 plist_type = "spartist"

@@ -548,19 +548,88 @@ class Call(PyTgCalls):
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "tg"
             else:
-                # Guard: if the queued file no longer exists on disk (e.g. it was
-                # a downloaded Spotify/API-2 track that got cleaned up between queue
-                # time and play time), tell the chat and skip rather than letting
-                # ffmpeg/ntgcalls fail silently.
-                if not queued.startswith("http") and not os.path.isfile(queued):
-                    mystic = await _safe_tg_call(
+                # ── Handle API-2 platform tracks queued as URLs ───────────────
+                # When a Spotify/Gaana/etc. playlist is queued, tracks may be stored
+                # as platform URLs (e.g. https://open.spotify.com/track/...) rather
+                # than local file paths.  We need to download them at play time.
+                _api2_platforms = {
+                    "spotify", "gaana", "jiosaavn", "deezer", "apple",
+                    "tidal", "soundcloud_api", "soundcloud",
+                }
+                _platform_str = (check[0].get("streamtype") or "").lower()
+                _is_api2_url = (
+                    queued.startswith("http")
+                    and _platform_str in _api2_platforms
+                )
+
+                if _is_api2_url:
+                    # Download from API-2 right now
+                    _dl_msg = await _safe_tg_call(
                         app.send_message, original_chat_id, _["call_7"]
                     )
-                    platform = check[0].get("streamtype") or "Unknown"
-                    return await mystic.edit_text(
-                        _["play_dl_failed"].format(platform),
-                        disable_web_page_preview=True,
+                    try:
+                        if _platform_str == "spotify":
+                            from AnonXMusic.platforms.Spotify import SpotifyAPI as _SpotifyAPI
+                            _file_path = await _SpotifyAPI().download(queued)
+                        elif _platform_str == "gaana":
+                            from AnonXMusic.platforms.Gaana import GaanaAPI as _GaanaAPI
+                            _file_path = await _GaanaAPI().download(queued)
+                        else:
+                            from AnonXMusic.platforms.Api import ApiPlatform as _ApiPlatform
+                            _file_path = await _ApiPlatform().download(queued)
+                    except Exception as _exc:
+                        LOGGER(__name__).error(
+                            f"[change_stream] API-2 download failed for {queued!r}: {_exc}"
+                        )
+                        _file_path = None
+
+                    if not _file_path or not os.path.isfile(_file_path):
+                        # Download failed — skip to next
+                        try:
+                            await _dl_msg.delete()
+                        except Exception:
+                            pass
+                        remaining = db.get(chat_id)
+                        if remaining and len(remaining) > 1:
+                            await _safe_tg_call(
+                                app.send_message,
+                                original_chat_id,
+                                _["call_queue_fail"],
+                            )
+                            try:
+                                remaining.pop(0)
+                            except Exception:
+                                pass
+                            return await self.change_stream(client, chat_id)
+                        else:
+                            await _clear_(chat_id)
+                            try:
+                                await client.leave_group_call(chat_id)
+                            except Exception:
+                                pass
+                            return await _safe_tg_call(
+                                app.send_message,
+                                original_chat_id,
+                                _["call_queue_end"],
+                            )
+
+                    # Update queue entry with local path
+                    db[chat_id][0]["file"] = _file_path
+                    queued = _file_path
+                    try:
+                        await _dl_msg.delete()
+                    except Exception:
+                        pass
+
+                # Guard: local file must exist
+                elif not queued.startswith("http") and not os.path.isfile(queued):
+                    _platform = check[0].get("streamtype") or "Unknown"
+                    return await _safe_tg_call(
+                        app.send_message,
+                        original_chat_id,
+                        _["play_dl_failed"].format(_platform),
                     )
+
                 if video:
                     stream = AudioVideoPiped(
                         queued,
@@ -580,8 +649,15 @@ class Call(PyTgCalls):
                         original_chat_id,
                         text=_["call_6"],
                     )
+
+                # ── Now Playing card — always a NEW message (not edit) ────────
+                # change_stream is only called for tracks 2, 3, … in the queue.
+                # The first track's mystic is handled by stream.py via
+                # _edit_or_send_photo (edits text → photo).  For subsequent tracks
+                # we always send a fresh photo so each track gets its own card.
+                button = stream_markup(_, chat_id)
+
                 if videoid == "telegram":
-                    button = stream_markup(_, chat_id)
                     run = await _safe_tg_call(
                         app.send_photo,
                         chat_id=original_chat_id,
@@ -596,7 +672,6 @@ class Call(PyTgCalls):
                     db[chat_id][0]["mystic"] = run
                     db[chat_id][0]["markup"] = "tg"
                 elif videoid == "soundcloud":
-                    button = stream_markup(_, chat_id)
                     run = await _safe_tg_call(
                         app.send_photo,
                         chat_id=original_chat_id,
@@ -608,9 +683,37 @@ class Call(PyTgCalls):
                     )
                     db[chat_id][0]["mystic"] = run
                     db[chat_id][0]["markup"] = "tg"
+                elif _platform_str in _api2_platforms:
+                    # API-2 platform: use thumbnail from queue, fall back to platform image
+                    _thumb = check[0].get("thumbnail") or ""
+                    _link  = check[0].get("file") or ""
+                    _img_map = {
+                        "spotify":        config.SPOTIFY_PLAYLIST_IMG_URL,
+                        "gaana":          config.GAANA_IMG_URL,
+                        "jiosaavn":       config.JIOSAAVN_IMG_URL,
+                        "deezer":         config.DEEZER_IMG_URL,
+                        "apple":          config.APPLE_IMG_URL,
+                        "tidal":          config.TIDAL_IMG_URL,
+                        "soundcloud_api": config.SOUNCLOUD_IMG_URL,
+                        "soundcloud":     config.SOUNCLOUD_IMG_URL,
+                    }
+                    _cover = _thumb or _img_map.get(_platform_str, config.PLAYLIST_IMG_URL)
+                    run = await _safe_tg_call(
+                        app.send_photo,
+                        chat_id=original_chat_id,
+                        photo=_cover,
+                        caption=_["stream_1"].format(
+                            _link or config.SUPPORT_CHAT,
+                            title[:23],
+                            check[0]["dur"],
+                            user,
+                        ),
+                        reply_markup=InlineKeyboardMarkup(button),
+                    )
+                    db[chat_id][0]["mystic"] = run
+                    db[chat_id][0]["markup"] = "tg"
                 else:
                     img = await get_thumb(videoid)
-                    button = stream_markup(_, chat_id)
                     run = await _safe_tg_call(
                         app.send_photo,
                         chat_id=original_chat_id,

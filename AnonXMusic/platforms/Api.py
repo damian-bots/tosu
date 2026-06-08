@@ -312,13 +312,17 @@ class ApiPlatform:
         """
         return await self._get("/api/track", {"url": url})
 
-    async def search(self, query: str, limit: int = 5) -> Optional[dict]:
+    async def search(self, query: str, limit: int = 5, platform: str = "spotify") -> Optional[dict]:
         """
         Search the platform for *query*.
-        Maps to GET /api/search?query=<query>&limit=<limit>
+        Maps to GET /api/search?query=<query>&limit=<limit>&platform=<platform>
+        platform defaults to "spotify" (matching the API endpoint behaviour).
         Returns the raw PlatformTracks dict from the API.
         """
-        return await self._get("/api/search", {"query": query, "limit": str(limit)})
+        params: dict = {"query": query, "limit": str(limit)}
+        if platform:
+            params["platform"] = platform
+        return await self._get("/api/search", params)
 
     async def track(self, url: str) -> Optional[tuple[dict, str]]:
         """
@@ -412,14 +416,22 @@ class ApiPlatform:
         Each dict mirrors Go's MusicTrack:
           { title, id, url, thumbnail, duration (int secs), channel, views, platform }
 
-        Callers (stream.py playlist handler) should use track["url"] directly
-        for API-2 platforms and fall back to YouTube search using track["title"]
-        only when track["url"] is empty.
+        For Spotify (and other API-2 platforms) every track from /api/get_url already
+        carries full metadata (title, duration, thumbnail, url, platform).
+        These tracks are tagged _ready=True so stream.py knows to download them
+        directly via ApiPlatform.download(url) without any YouTube search.
+
+        Callers should use track["url"] directly for API-2 platforms and fall back
+        to YouTube search using track["title"] only when track["url"] is empty.
         """
         data = await self.get_info(url)
         if not data:
             return None
         tracks = self._extract_music_tracks(data)
+        # Tag each track so stream.py knows it's fully resolved and has a CDN-ready URL
+        for t in tracks:
+            if t.get("url") and t.get("platform"):
+                t["_ready"] = True
         return tracks, url
 
     async def album(self, url: str) -> Optional[tuple[list[dict], str]]:
