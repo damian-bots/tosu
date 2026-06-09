@@ -9,8 +9,9 @@ from AnonXMusic import LOGGER, app, userbot
 from AnonXMusic.core.call import Anony
 from AnonXMusic.misc import sudo
 from AnonXMusic.plugins import ALL_MODULES
-from AnonXMusic.utils.database import get_banned_users, get_gbimport asyncio
-import importlib
+from AnonXMusic.utils.database import get_banned_users, get_gb
+import asyncio
+import lib
 
 from pyrogram import idle
 from pytgcalls import exceptions as pytgcalls_exceptions
