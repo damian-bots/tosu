@@ -12,9 +12,10 @@ numpy==2.2.6
 opencv-python==4.13.0.92
 pillow==9.5.0
 psutil==7.2.2
-https://github.com/KurimuzonAkuma/pyrogram/archive/v2.2.23.zip
+kurigram==2.2.23
 tgcrypto==1.2.5
-py-tgcalls==0.9.7
+py-tgcalls==2.3.0
+ntgcalls==2.2.2
 pykeyboard==0.1.5
 python-dotenv==1.2.2
 pyyaml==6.0.3
