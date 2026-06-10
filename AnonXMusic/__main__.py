@@ -7,12 +7,6 @@
 import asyncio
 import importlib
 
-try:
-    import uvloop
-    uvloop.install()
-except ImportError:
-    pass
-
 from pyrogram import idle
 from pytgcalls import exceptions as pytgcalls_exceptions
 
@@ -43,7 +37,7 @@ async def init():
         users = await get_banned_users()
         for user_id in users:
             BANNED_USERS.add(user_id)
-    except:
+    except Exception:
         pass
     await app.start()
     for all_module in ALL_MODULES:
@@ -55,10 +49,10 @@ async def init():
         await Anony.stream_call("https://te.legra.ph/file/29f784eb49d230ab62e9e.mp4")
     except pytgcalls_exceptions.NoActiveGroupCall:
         LOGGER("AnonXMusic").error(
-            "Please turn on the videochat of your log group\channel.\n\nStopping Bot..."
+            "Please turn on the videochat of your log group/channel.\n\nStopping Bot..."
         )
         exit()
-    except:
+    except Exception:
         pass
     await Anony.decorators()
     LOGGER("AnonXMusic").info(
@@ -71,4 +65,13 @@ async def init():
 
 
 if __name__ == "__main__":
-    asyncio.run(init())
+    try:
+        import uvloop
+        loop = uvloop.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(init())
+        finally:
+            loop.close()
+    except ImportError:
+        asyncio.run(init())
