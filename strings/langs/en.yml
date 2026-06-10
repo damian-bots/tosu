@@ -320,3 +320,20 @@ gban_9 : "» Lifted Global Ban From {0}.\n\nUnbanned In {1} Chats."
 gban_10 : "» No One Is Globally Banned From The Bot."
 gban_11 : "» Fetching Gbanned Users List..."
 gban_12 : "<b>Globally Banned Users :</b>\n\n"
+
+# ── YouTube video-download toggle ────────────────────────────────────────────
+yt_video_disabled : "🚫 <b>Video Playback Temporarily Unavailable</b>\n\nDue to high server load, we've temporarily disabled YouTube video downloads (/vplay).\n\nAudio playback via /play is working as usual. 🎵\n\nWe apologise for the inconvenience and hope to restore this feature very soon.\nThank you for your patience and understanding! 🙏"
+
+# ── Join-call error messages ──────────────────────────────────────────────────
+call_flood_wait : "⏳ <b>Flood Wait</b>\n\nTelegram is asking the assistant to wait <b>{0} seconds</b> before joining the call.\n\nPlease try again in a moment."
+
+call_frozen : "🧊 <b>Assistant Account Restricted</b>\n\nOne of the assistant accounts appears to have been temporarily frozen by Telegram (FROZEN_METHOD_INVALID).\n\nThe bot owner has been notified. Please try again later or use /reboot."
+
+call_retryable_failed : "⚠️ <b>Group Call Error</b>\n\nCould not join the voice chat after multiple retries.\n\nError: <code>{0}</code>\n\nPlease end and restart the voice chat, then try again."
+
+call_channels_too_much : "📛 <b>Too Many Channels</b>\n\nThe assistant has joined too many channels/groups (CHANNELS_TOO_MUCH).\n\nPlease contact the bot owner to resolve this."
+
+# ── Owner warning messages (sent to OWNER_ID) ───────────────────────────────
+owner_warn_flood : "⚠️ <b>FloodWait Alert</b>\n\n<b>Chat:</b> <code>{0}</code>\n<b>Wait time:</b> <b>{1}s</b>\n\nThe assistant hit a FloodWait while joining a group call. Bot will resume automatically after the wait."
+
+owner_warn_frozen : "🚨 <b>FROZEN ACCOUNT DETECTED</b>\n\n<b>Chat:</b> <code>{0}</code>\n<b>Error:</b> <code>{1}</code>\n\nAn assistant account has been frozen by Telegram (FROZEN_METHOD_INVALID). Please check your session strings and consider replacing the frozen account."

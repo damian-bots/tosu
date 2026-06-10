@@ -7,11 +7,12 @@ from datetime import datetime, timedelta
 from typing import Union
 
 from pyrogram import Client
+from pyrogram.errors import FloodWait, ChannelsTooMuch
 from pyrogram.types import InlineKeyboardMarkup
 
-# ── New pytgcalls / ntgcalls imports ────────────────────────────────────────
+# ── ntgcalls imports ────────────────────────────────────────────────────────
 from ntgcalls import (
-    ConnectionError,
+    ConnectionError as NTGConnectionError,
     ConnectionNotFound,
     RTMPStreamingUnsupported,
     TelegramServerError,
@@ -46,14 +47,47 @@ from strings import get_string
 autoend = {}
 counter = {}
 
+# ── Error-pattern helpers ───────────────────────────────────────────────────
+
+_RETRYABLE_TG_ERRORS = (
+    "GROUPCALL_ADD_PARTICIPANTS_FAILED",
+    "CHANNELS_TOO_MUCH",
+)
+
+def _is_frozen(exc: Exception) -> bool:
+    """Return True if this exception indicates the assistant account is frozen."""
+    msg = str(exc).upper()
+    return "FROZEN_METHOD_INVALID" in msg or "METHOD_INVALID" in msg
+
+
+def _is_retryable_call_error(exc: Exception) -> bool:
+    """Return True for transient group-call errors that are worth retrying."""
+    msg = str(exc)
+    return any(tag in msg for tag in _RETRYABLE_TG_ERRORS)
+
+
+async def _notify_owner(text: str) -> None:
+    """Send a warning to OWNER_ID (best-effort, never raises)."""
+    try:
+        owner_id = int(config.OWNER_ID)
+        await app.send_message(owner_id, text, disable_web_page_preview=True)
+    except Exception as e:
+        LOGGER(__name__).warning(f"[notify_owner] failed: {e}")
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 async def _safe_tg_call(coro_fn, *args, retries: int = 4, base_delay: float = 3.0, **kwargs):
-    """Retry a Pyrogram coroutine on transient TCP connection errors."""
+    """Retry a Pyrogram coroutine on transient TCP/flood errors."""
     for attempt in range(1, retries + 1):
         try:
             return await coro_fn(*args, **kwargs)
+        except FloodWait as fw:
+            wait = fw.value + 1
+            LOGGER(__name__).warning(f"[TG] FloodWait {wait}s on attempt {attempt}/{retries}")
+            await asyncio.sleep(wait)
+            if attempt == retries:
+                raise
         except (OSError, ConnectionResetError) as e:
             if attempt < retries:
                 wait = base_delay * attempt
@@ -279,7 +313,7 @@ class Call(PyTgCalls):
         await asyncio.sleep(0.2)
         await assistant.leave_call(config.LOGGER_ID)
 
-    # ── Join call with retry ──────────────────────────────────────────────────
+    # ── Join call with full retry / error handling ───────────────────────────
 
     @error_logger(label="Assistant Join Call")
     async def join_call(
@@ -296,7 +330,9 @@ class Call(PyTgCalls):
         stream = _make_stream(link, video=bool(video))
 
         max_retries = 5
-        retry_delay = 2.0
+        retry_delay = 3.0
+        last_exc: Exception | None = None
+
         for attempt in range(1, max_retries + 1):
             try:
                 await assistant.play(
@@ -304,22 +340,98 @@ class Call(PyTgCalls):
                     stream=stream,
                     config=types.GroupCallConfig(auto_start=False),
                 )
+                last_exc = None
                 break  # success
-            except exceptions.NoActiveGroupCall:
-                if attempt < max_retries:
-                    LOGGER(__name__).warning(
-                        f"[join_call] NoActiveGroupCall for {chat_id}, "
-                        f"retry {attempt}/{max_retries} in {retry_delay}s…"
+
+            # ── FLOOD_WAIT: back off, warn owner, retry ──────────────────────
+            except FloodWait as fw:
+                wait = fw.value + 1
+                LOGGER(__name__).warning(
+                    f"[join_call] FloodWait {wait}s for chat {chat_id} "
+                    f"attempt {attempt}/{max_retries}"
+                )
+                await _notify_owner(
+                    _["owner_warn_flood"].format(chat_id, wait)
+                )
+                await asyncio.sleep(wait)
+                last_exc = fw
+                if attempt == max_retries:
+                    raise AssistantErr(_["call_flood_wait"].format(wait))
+
+            # ── FROZEN account: warn owner, abort immediately ────────────────
+            except Exception as e:
+                if _is_frozen(e):
+                    LOGGER(__name__).error(
+                        f"[join_call] Frozen account detected for chat {chat_id}: {e}"
                     )
-                    await asyncio.sleep(retry_delay)
-                else:
+                    await _notify_owner(_["owner_warn_frozen"].format(chat_id, str(e)))
+                    raise AssistantErr(_["call_frozen"])
+
+                # ── Retryable transient errors (GROUPCALL_ADD_PARTICIPANTS_FAILED,
+                #    CHANNELS_TOO_MUCH) ─────────────────────────────────────────
+                elif _is_retryable_call_error(e):
+                    if attempt < max_retries:
+                        wait = retry_delay * attempt
+                        LOGGER(__name__).warning(
+                            f"[join_call] Retryable error for {chat_id} "
+                            f"attempt {attempt}/{max_retries}: {e}. Retry in {wait}s…"
+                        )
+                        await asyncio.sleep(wait)
+                        last_exc = e
+                        continue
+                    raise AssistantErr(_["call_retryable_failed"].format(str(e)[:80]))
+
+                # ── ChannelsTooMuch: also retryable ──────────────────────────
+                elif isinstance(e, ChannelsTooMuch):
+                    if attempt < max_retries:
+                        wait = retry_delay * attempt
+                        LOGGER(__name__).warning(
+                            f"[join_call] ChannelsTooMuch for {chat_id}, "
+                            f"retry {attempt}/{max_retries} in {wait}s…"
+                        )
+                        await asyncio.sleep(wait)
+                        last_exc = e
+                        continue
+                    raise AssistantErr(_["call_channels_too_much"])
+
+                # ── NoActiveGroupCall: retry a few times ────────────────────
+                elif isinstance(e, exceptions.NoActiveGroupCall):
+                    if attempt < max_retries:
+                        LOGGER(__name__).warning(
+                            f"[join_call] NoActiveGroupCall for {chat_id}, "
+                            f"retry {attempt}/{max_retries} in {retry_delay}s…"
+                        )
+                        await asyncio.sleep(retry_delay)
+                        last_exc = e
+                        continue
                     raise AssistantErr(_["call_8"])
-            except exceptions.AlreadyJoinedError:
-                raise AssistantErr(_["call_9"])
-            except (TelegramServerError, ConnectionError, ConnectionNotFound):
-                raise AssistantErr(_["call_10"])
-            except RTMPStreamingUnsupported:
-                raise AssistantErr(_["call_11"])
+
+                # ── Already joined: not an error, just continue ──────────────
+                elif isinstance(e, exceptions.NotInCallError):
+                    # pytgcalls 2.x removed AlreadyJoinedError;
+                    # attempt to resume by calling play again once
+                    LOGGER(__name__).warning(
+                        f"[join_call] NotInCallError for {chat_id}; will retry once"
+                    )
+                    if attempt < max_retries:
+                        await asyncio.sleep(1)
+                        last_exc = e
+                        continue
+                    raise AssistantErr(_["call_9"])
+
+                # ── Server / connection errors ───────────────────────────────
+                elif isinstance(e, (TelegramServerError, NTGConnectionError, ConnectionNotFound)):
+                    raise AssistantErr(_["call_10"])
+
+                elif isinstance(e, RTMPStreamingUnsupported):
+                    raise AssistantErr(_["call_11"])
+
+                # ── Unknown: re-raise ────────────────────────────────────────
+                else:
+                    raise
+
+        if last_exc:
+            raise AssistantErr(_["call_10"])
 
         await add_active_chat(chat_id)
         await music_on(chat_id)
@@ -468,7 +580,6 @@ class Call(PyTgCalls):
                 db[chat_id][0]["markup"] = "tg"
 
             else:
-                # Guard: if the queued file no longer exists on disk, skip gracefully
                 if not queued.startswith("http") and not os.path.isfile(queued):
                     mystic = await _safe_tg_call(
                         app.send_message, original_chat_id, _["call_7"]
@@ -580,7 +691,6 @@ class Call(PyTgCalls):
 
             @client.on_update()
             async def update_handler(_, update: types.Update) -> None:
-                # Stream ended → advance queue
                 if isinstance(update, types.StreamEnded):
                     if update.stream_type == types.StreamEnded.Type.AUDIO:
                         max_retries = 5
@@ -603,14 +713,36 @@ class Call(PyTgCalls):
                                         f"[stream_end] Gave up after {max_retries} "
                                         f"retries for chat {update.chat_id}: {e}"
                                     )
-                            except Exception as e:
-                                LOGGER(__name__).error(
-                                    f"[stream_end] Unexpected error for chat "
-                                    f"{update.chat_id}: {e}"
+                            except FloodWait as fw:
+                                wait = fw.value + 1
+                                LOGGER(__name__).warning(
+                                    f"[stream_end] FloodWait {wait}s for chat "
+                                    f"{update.chat_id}, attempt {attempt}/{max_retries}"
                                 )
+                                await _notify_owner(
+                                    f"⚠️ <b>FloodWait on stream-end</b>\n"
+                                    f"Chat: <code>{update.chat_id}</code>\n"
+                                    f"Wait: <b>{wait}s</b>"
+                                )
+                                await asyncio.sleep(wait)
+                            except Exception as e:
+                                if _is_frozen(e):
+                                    LOGGER(__name__).error(
+                                        f"[stream_end] Frozen account for chat "
+                                        f"{update.chat_id}: {e}"
+                                    )
+                                    await _notify_owner(
+                                        f"🚨 <b>Frozen Account Detected</b>\n"
+                                        f"Chat: <code>{update.chat_id}</code>\n"
+                                        f"Error: <code>{str(e)[:200]}</code>"
+                                    )
+                                else:
+                                    LOGGER(__name__).error(
+                                        f"[stream_end] Unexpected error for chat "
+                                        f"{update.chat_id}: {e}"
+                                    )
                                 break
 
-                # Chat left / kicked / voice chat closed → clean up
                 elif isinstance(update, types.ChatUpdate):
                     if update.status in [
                         types.ChatUpdate.Status.KICKED,
