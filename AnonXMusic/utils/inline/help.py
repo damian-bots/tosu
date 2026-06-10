@@ -1,6 +1,8 @@
-# AnonXMusic · utils/inline/help.py  (v1.0.5)
-# Help panel — music-related buttons only.
-# Removed: Broadcast, Sudo/Maintenance buttons, Song download section.
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
 
 from typing import Union
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup

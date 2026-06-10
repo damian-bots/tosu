@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 def get_readable_time(seconds: int) -> str:
     count = 0
     readable_time = ""

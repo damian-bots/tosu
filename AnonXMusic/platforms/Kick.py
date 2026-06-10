@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 """AnonXMusic/platforms/Kick.py — Kick VODs & clips via API-2."""
 import re, logging
 from typing import Optional

@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 from src.database import db
 
 usersdb = db.users
@@ -24,7 +30,6 @@ async def get_user_coins(user_id: int) -> int:
     if user:
         return user.get("coins", 0)
     else:
-        # If user does not exist, return 0 coins
         return 0
 
 async def update_user_coins(user_id: int, coins: int):

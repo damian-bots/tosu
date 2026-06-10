@@ -1,6 +1,8 @@
-# AnonXMusic — Youtube.py  (v1.0.4)
-# Clean rewrite — API-1 download modelled after Spotify3-dev helpers/_api.py
-# Full error logging to terminal + ERROR_LOG_ID on every failure/exception.
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
 
 import asyncio
 import glob
@@ -34,7 +36,6 @@ from AnonXMusic.utils.formatters import time_to_seconds
 
 LOGGER = _LOGGER(__name__)
 
-# ── Constants ────────────────────────────────────────────────────────────────
 DOWNLOAD_DIR        = os.path.join(os.getcwd(), "downloads")
 CHUNK_SIZE          = 1024 * 1024
 SEARCH_RETRIES      = 4
@@ -54,7 +55,6 @@ _session_lock = asyncio.Lock()
 _MONGO_CLIENT: Optional[AsyncIOMotorClient] = None
 _TG_FLOOD_COOLDOWN: float = 0.0
 
-# ── Error helpers ─────────────────────────────────────────────────────────────
 
 async def _log_error(context: str, exc: Exception) -> None:
     """Print full traceback to terminal AND forward to ERROR_LOG_ID."""
@@ -81,7 +81,6 @@ async def _log_error(context: str, exc: Exception) -> None:
         LOGGER.warning(f"[YouTube] Could not send error to ERROR_LOG_ID: {send_err}")
 
 
-# ── Cookies ───────────────────────────────────────────────────────────────────
 
 def cookie_txt_file() -> str:
     folder = os.path.join(os.getcwd(), "cookies")
@@ -91,7 +90,6 @@ def cookie_txt_file() -> str:
     return f"cookies/{os.path.basename(random.choice(txt_files))}"
 
 
-# ── HTTP session (singleton) ──────────────────────────────────────────────────
 
 async def get_http_session() -> aiohttp.ClientSession:
     global _session
@@ -106,7 +104,6 @@ async def get_http_session() -> aiohttp.ClientSession:
         return _session
 
 
-# ── Mongo media-cache helpers ─────────────────────────────────────────────────
 
 def _get_media_collection():
     global _MONGO_CLIENT
@@ -142,7 +139,6 @@ async def _get_media_msg_id(track_id: str, is_video: bool = False) -> Optional[i
     return None
 
 
-# ── URL / ID helpers ──────────────────────────────────────────────────────────
 
 YOUTUBE_REGEX = re.compile(
     r"(?:https?://)?(?:www\.|m\.|music\.)?"
@@ -195,7 +191,6 @@ def _ensure_dir(p: str) -> None:
     os.makedirs(p, exist_ok=True)
 
 
-# ── Telegram media-DB download (channel cache) ───────────────────────────────
 
 async def _download_from_media_db(track_id: str, is_video: bool) -> Optional[str]:
     global _TG_FLOOD_COOLDOWN
@@ -258,9 +253,6 @@ async def _download_from_media_db(track_id: str, is_video: bool) -> Optional[str
         return None
 
 
-# ── API-1 (Arc API) — modelled after Spotify3 helpers/_api.py ─────────────────
-# Three clean steps:  create_job → get_url (poll) → save_file
-# Each step has proper retries and logs every failure.
 
 async def _api1_create_job(
     session: aiohttp.ClientSession,
@@ -420,7 +412,6 @@ async def _optimized_download(link: str, is_video: bool) -> Optional[str]:
     """Try media-DB channel cache first, then API-1."""
     vid = extract_video_id(str(link))
 
-    # 1. Channel media-DB cache
     if vid:
         try:
             db_path = await _download_from_media_db(vid, is_video)
@@ -429,7 +420,6 @@ async def _optimized_download(link: str, is_video: bool) -> Optional[str]:
         except Exception as e:
             await _log_error(f"Media-DB lookup for {vid}", e)
 
-    # 2. API-1
     try:
         api_path = await _api1_download(str(link), is_video)
         if api_path and os.path.exists(api_path):
@@ -440,7 +430,6 @@ async def _optimized_download(link: str, is_video: bool) -> Optional[str]:
     return None
 
 
-# ── Search helpers ────────────────────────────────────────────────────────────
 
 async def _fast_search(query: str, fetch_all: bool = False):
     """Scrape YouTube search results without yt-dlp."""
@@ -471,7 +460,6 @@ async def _fast_search(query: str, fetch_all: bool = False):
 
     results: list = []
 
-    # Try JSON parse
     try:
         match = re.search(r'(?:var ytInitialData|window\["ytInitialData"\])\s*=\s*(\{)', html_text)
         if match:
@@ -534,7 +522,6 @@ async def _fast_search(query: str, fetch_all: bool = False):
     except Exception as e:
         await _log_error(f"fast_search JSON parse for {query!r}", e)
 
-    # Regex fallback
     if not results:
         for vid_id in dict.fromkeys(re.findall(r'"videoId":"([a-zA-Z0-9_-]{11})"', html_text)):
             results.append({
@@ -557,7 +544,6 @@ async def _fast_search(query: str, fetch_all: bool = False):
     return best
 
 
-# ── Main YouTubeAPI class ─────────────────────────────────────────────────────
 
 class YouTubeAPI:
     def __init__(self):
@@ -565,7 +551,6 @@ class YouTubeAPI:
         self.listbase = "https://youtube.com/playlist?list="
         self.regex    = YOUTUBE_REGEX
 
-    # ── exists / url ──────────────────────────────────────────────────────────
 
     async def exists(self, link: str, videoid: Union[bool, str] = None) -> bool:
         if not link:
@@ -593,7 +578,6 @@ class YouTubeAPI:
                         return entity.url
         return None
 
-    # ── details ───────────────────────────────────────────────────────────────
 
     async def details(self, link: str, videoid: Union[bool, str] = None):
         if not link:
@@ -653,7 +637,6 @@ class YouTubeAPI:
         except Exception:
             return fallback
 
-    # ── track ─────────────────────────────────────────────────────────────────
 
     async def track(self, link: str, videoid: Union[bool, str] = None):
         if not link:
@@ -696,7 +679,6 @@ class YouTubeAPI:
         await _log_error(f"track() failed for {link}", last_err)
         raise Exception(f"❌ Could not process track: {last_err}")
 
-    # ── slider ────────────────────────────────────────────────────────────────
 
     async def slider(self, link: str, query_type: int, videoid: Union[bool, str] = None):
         if not link:
@@ -718,7 +700,6 @@ class YouTubeAPI:
                         target = scraped[query_type]
                         if target.get("title") and target["title"] != "Unknown Title":
                             return target["title"], target["duration"], target["thumbnail"], target["video_id"]
-                        # Enrich via VideosSearch
                         res = await VideosSearch(
                             f"https://www.youtube.com/watch?v={target['video_id']}", limit=1
                         ).next()
@@ -752,7 +733,6 @@ class YouTubeAPI:
         await _log_error(f"slider() failed for {link}", last_err)
         raise Exception(f"❌ Failed to load search options: {last_err}")
 
-    # ── video (live stream URL) ────────────────────────────────────────────────
 
     async def video(self, link: str, videoid: Union[bool, str] = None):
         if not link:
@@ -781,7 +761,6 @@ class YouTubeAPI:
             return 0, str(e)
         return (1, stdout.decode().split("\n")[0]) if stdout else (0, stderr.decode())
 
-    # ── playlist ──────────────────────────────────────────────────────────────
 
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
         if not link:
@@ -817,7 +796,6 @@ class YouTubeAPI:
             await _log_error(f"playlist() decode error for {link}", e)
             return []
 
-    # ── formats ───────────────────────────────────────────────────────────────
 
     async def formats(self, link: str, videoid: Union[bool, str] = None):
         import yt_dlp
@@ -851,7 +829,6 @@ class YouTubeAPI:
             await _log_error(f"formats() for {link}", e)
             return [], link
 
-    # ── download (main entry point) ───────────────────────────────────────────
 
     async def download(
         self,
@@ -904,7 +881,6 @@ class YouTubeAPI:
         LOGGER.error(f"[Download] All methods failed for {link}")
         return _fail()
 
-    # ── internal meta resolver ────────────────────────────────────────────────
 
     async def _resolve_meta(self, link: str, vid: str):
         """Return (title, duration_min, vidid, thumbnail, yturl)."""
@@ -931,7 +907,6 @@ class YouTubeAPI:
                     scrape_res["title"], scrape_res["duration"],
                     scrape_res["video_id"], scrape_res["thumbnail"], scrape_res["url"],
                 )
-            # Enrich with VideosSearch
             results = VideosSearch(
                 f"https://www.youtube.com/watch?v={scrape_res['video_id']}", limit=1
             )

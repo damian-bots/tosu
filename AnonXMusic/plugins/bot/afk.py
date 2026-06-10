@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 import re
 import time
 
@@ -12,7 +18,6 @@ from AnonXMusic.mongo.readable_time import get_readable_time
 
 @app.on_message(filters.command(["afk"], prefixes=["/"]))
 async def active_afk(_, message: Message):
-    # Added safety check for Anonymous Admins / Channels
     if message.sender_chat or not message.from_user:
         return
     user_id = message.from_user.id
@@ -169,13 +174,11 @@ chat_watcher_group = 1
     group=chat_watcher_group,
 )
 async def chat_watcher_func(_, message):
-    # Added safety check for Anonymous Admins / Channels
     if message.sender_chat or not message.from_user:
         return
     userid = message.from_user.id
     user_name = message.from_user.first_name
 
-    # FIX: Replaced emoji-breaking slicing with safe .startswith()
     message_text = message.text or message.caption
     if message_text:
         possible = ["/afk", f"/afk@{app.username}"]

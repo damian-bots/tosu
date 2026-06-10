@@ -1,5 +1,17 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 import asyncio
 import importlib
+
+try:
+    import uvloop
+    uvloop.install()
+except ImportError:
+    pass
 
 from pyrogram import idle
 from pytgcalls import exceptions as pytgcalls_exceptions
@@ -59,4 +71,4 @@ async def init():
 
 
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(init())
+    asyncio.run(init())

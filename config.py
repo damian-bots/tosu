@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 import re
 from os import getenv
 
@@ -6,64 +12,48 @@ from pyrogram import filters
 
 load_dotenv()
 
-# ── Telegram App credentials (my.telegram.org/apps) ──────────────────────────
 API_ID   = "24620300"
 API_HASH = "9a098f01aa56c836f2e34aee4b7ef963"
 
-# ── Bot token (@BotFather) ────────────────────────────────────────────────────
 BOT_TOKEN = getenv("BOT_TOKEN")
 
-# ── MongoDB ───────────────────────────────────────────────────────────────────
 MONGO_DB_URI = getenv("MONGO_DB_URI")
 DB_URI       = getenv("DB_URI")       # Required: used by Youtube.py media cache
 DB_NAME      = getenv("DB_NAME")
 
-# ── Telegram channel / chat IDs ───────────────────────────────────────────────
 LOGGER_ID        = int(getenv("LOGGER_ID"))
 MEDIA_CHANNEL_ID = int(getenv("MEDIA_CHANNEL_ID"))   # Required: media file cache channel
 ERROR_LOG_ID     = int(getenv("ERROR_LOG_ID", "-1003640483183"))
 
-# ── API-1 (Arc / deadline-tech) ───────────────────────────────────────────────
-# Get credentials from deadlinetech.site or @smaugxd
 API_URL = getenv("API_URL", "https://api.arcmusic.fun")
 API_KEY = getenv("API_KEY")       # Required
 
 API_URL2 = getenv("API_URL2", "https://api.onegrab.fun")
 API_KEY2 = getenv("API_KEY2")
 
-# ── API-2 (OneGrab) ───────────────────────────────────────────────────────────
 API_URL2 = getenv("API_URL2", "https://api.onegrab.fun")
 API_KEY2 = getenv("API_KEY2")     # Required
 
-# ── Owner ─────────────────────────────────────────────────────────────────────
 OWNER_ID = 603536072
 
-# ── Heroku (optional) ─────────────────────────────────────────────────────────
 HEROKU_APP_NAME = getenv("HEROKU_APP_NAME")
 HEROKU_API_KEY  = getenv("HEROKU_API_KEY")
 
-# ── Git upstream ──────────────────────────────────────────────────────────────
 UPSTREAM_REPO   = getenv("UPSTREAM_REPO", "https://github.com/damian-bots/tosu")
 UPSTREAM_BRANCH = getenv("UPSTREAM_BRANCH", "master")
 GIT_TOKEN       = getenv("GIT_TOKEN", None)
 
-# ── Support links ─────────────────────────────────────────────────────────────
 SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/Arcupdates")
 SUPPORT_CHAT    = getenv("SUPPORT_CHAT",    "https://t.me/ArcChatz")
 
-# ── Misc ──────────────────────────────────────────────────────────────────────
 AUTO_LEAVING_ASSISTANT = bool(getenv("AUTO_LEAVING_ASSISTANT", True))
 DURATION_LIMIT_MIN     = int(getenv("DURATION_LIMIT", 469))
 
-# ── Spotify OAuth ─────────────────────────────────────────────────────────────
 SPOTIFY_CLIENT_ID     = getenv("SPOTIFY_CLIENT_ID",     "6be9f0b34c384ad097cc71b1c1fc5e8b")
 SPOTIFY_CLIENT_SECRET = getenv("SPOTIFY_CLIENT_SECRET", "2607415f99944cc6b24fa98018fb8c09")
 
-# ── Playlist fetch limit ──────────────────────────────────────────────────────
 PLAYLIST_FETCH_LIMIT = int(getenv("PLAYLIST_FETCH_LIMIT", 50))
 
-# ── Platform toggles ──────────────────────────────────────────────────────────
-# Set to "false" (case-insensitive) to disable a platform.
 def _bool(key: str, default: bool = True) -> bool:
     val = getenv(key, "").strip().lower()
     if val == "false":
@@ -73,7 +63,7 @@ def _bool(key: str, default: bool = True) -> bool:
     return default
 
 ENABLE_YOUTUBE    = _bool("ENABLE_YOUTUBE",    True)
-ENABLE_YOUTUBE_VIDEO = _bool("ENABLE_YOUTUBE_VIDEO", False)
+ENABLE_YOUTUBE_VIDEO = _bool("ENABLE_YOUTUBE_VIDEO", True)
 ENABLE_SPOTIFY    = _bool("ENABLE_SPOTIFY",    True)
 ENABLE_APPLE      = _bool("ENABLE_APPLE",      True)
 ENABLE_SOUNDCLOUD = _bool("ENABLE_SOUNDCLOUD", True)
@@ -85,18 +75,15 @@ ENABLE_TWITCH     = _bool("ENABLE_TWITCH",     True)
 ENABLE_KICK       = _bool("ENABLE_KICK",       False)
 ENABLE_MXPLAYER   = _bool("ENABLE_MXPLAYER",   True)
 
-# ── File size limits ──────────────────────────────────────────────────────────
 TG_AUDIO_FILESIZE_LIMIT = int(getenv("TG_AUDIO_FILESIZE_LIMIT", 104857600))   # 100 MB
 TG_VIDEO_FILESIZE_LIMIT = int(getenv("TG_VIDEO_FILESIZE_LIMIT", 1073741824))  # 1 GB
 
-# ── Userbot sessions ──────────────────────────────────────────────────────────
 STRING1 = getenv("STRING_SESSION",  None)
 STRING2 = getenv("STRING_SESSION2", None)
 STRING3 = getenv("STRING_SESSION3", None)
 STRING4 = getenv("STRING_SESSION4", None)
 STRING5 = getenv("STRING_SESSION5", None)
 
-# ── In-memory state ───────────────────────────────────────────────────────────
 BANNED_USERS = filters.user()
 adminlist  = {}
 lyrical    = {}
@@ -104,7 +91,6 @@ votemode   = {}
 autoclean  = []
 confirmer  = {}
 
-# ── Image URLs ────────────────────────────────────────────────────────────────
 START_IMG_URL    = getenv("START_IMG_URL", "https://files.catbox.moe/67fpo2.jpg")
 PING_IMG_URL     = getenv("PING_IMG_URL",  "https://files.catbox.moe/4q5mlx.jpg")
 PLAYLIST_IMG_URL = "https://files.catbox.moe/hyfiyc.jpg"
@@ -144,7 +130,6 @@ def time_to_seconds(time):
 DURATION_LIMIT = int(time_to_seconds(f"{DURATION_LIMIT_MIN}:00"))
 
 
-# ── Startup validation ────────────────────────────────────────────────────────
 if SUPPORT_CHANNEL and not re.match("(?:http|https)://", SUPPORT_CHANNEL):
     raise SystemExit(
         "[ERROR] SUPPORT_CHANNEL must start with https://"

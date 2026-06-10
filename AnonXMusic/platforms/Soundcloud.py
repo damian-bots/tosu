@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 """
 AnonXMusic/platforms/Soundcloud.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -38,7 +44,6 @@ class SoundAPI:
     def _api_ready(self) -> bool:
         return bool(config.API_URL2 and config.API_KEY2)
 
-    # ── track info ─────────────────────────────────────────────
     async def track(self, url: str):
         """Returns (track_details_dict, track_id) via API-2."""
         if self._api_ready():
@@ -47,7 +52,6 @@ class SoundAPI:
                 return result
         return None
 
-    # ── download ───────────────────────────────────────────────
     async def download(self, url: str, video: bool = False) -> Optional[str]:
         """
         Download via API-2 if configured; otherwise fall back to yt-dlp.
@@ -59,7 +63,6 @@ class SoundAPI:
             if file_path:
                 return file_path
 
-        # yt-dlp fallback (original behaviour)
         return await self._ytdlp_download(url)
 
     async def _ytdlp_download(self, url: str):

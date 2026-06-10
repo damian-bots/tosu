@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 from pyrogram import filters
 
 from AnonXMusic import YouTube, app
@@ -57,4 +63,3 @@ async def play_live_stream(client, CallbackQuery, _):
             return await mystic.edit_text(err)
     else:
         return await mystic.edit_text("» ɴᴏᴛ ᴀ ʟɪᴠᴇ sᴛʀᴇᴀᴍ.")
-    # mystic was edited into the Now Playing card inside stream(); do not delete it.

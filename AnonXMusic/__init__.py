@@ -1,5 +1,9 @@
-# ── Kurigram 2.2.23 / py-tgcalls 0.9.7 compatibility patch ─────────────────
-# Must be imported BEFORE any pytgcalls client is created or started.
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 import AnonXMusic.core.compat  # noqa: F401
 
 from AnonXMusic.core.bot import Anony

@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 from __future__ import annotations
 
 import asyncio
@@ -223,7 +229,6 @@ async def _download_direct(cdn_url: str, track_id: str, ext: str = "mp3") -> Opt
     if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
         return out_path
 
-    # Detect HLS/M3U8 streams — use yt-dlp with ffmpeg downloader
     is_hls = (
         "m3u8" in cdn_url.lower()
         or ".m3u" in cdn_url.lower()
@@ -463,7 +468,6 @@ class ApiPlatform:
         if not data:
             return None
         tracks = self._extract_music_tracks(data)
-        # Tag each track so stream.py knows it's fully resolved and has a CDN-ready URL
         for t in tracks:
             if t.get("url") and t.get("platform"):
                 t["_ready"] = True

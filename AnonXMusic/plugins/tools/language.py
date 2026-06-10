@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
@@ -9,7 +15,6 @@ from strings import get_string, languages_present
 
 
 def lanuages_keyboard(_):
-    # Generate buttons for all available languages
     buttons = [
         InlineKeyboardButton(
             text=languages_present[i],
@@ -18,10 +23,8 @@ def lanuages_keyboard(_):
         for i in languages_present
     ]
     
-    # Chunk the buttons into rows of 2 (native Pyrogram approach)
     keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     
-    # Append the back and close buttons at the bottom row
     keyboard.append(
         [
             InlineKeyboardButton(

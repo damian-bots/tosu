@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 import random
 import string
 from urllib.parse import unquote
@@ -56,9 +62,6 @@ async def play_commnd(
     url,
     fplay,
 ):
-    # ── YouTube video-download toggle ────────────────────────────────────────
-    # If ENABLE_YOUTUBE_VIDEO is False, /vplay and video=True from YouTube
-    # are blocked. Audio /play still works normally.
     if video and not config.ENABLE_YOUTUBE_VIDEO:
         return await message.reply_text(_["yt_video_disabled"])
 
@@ -571,7 +574,7 @@ async def play_commnd(
                         reply_markup=InlineKeyboardMarkup(buttons),
                     )
         try:
-            await stream(
+            result = await stream(
                 _,
                 mystic,
                 user_id,
@@ -588,9 +591,6 @@ async def play_commnd(
             ex_type = type(e).__name__
             err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
             return await mystic.edit_text(err)
-        # "queued" sentinel → mystic is the queue-card, leave it alive
-        # Any other truthy return from stream() → also leave mystic (error was already edited in)
-        # Only delete mystic when stream() returned None (= now-playing, card already sent)
         if result is None:
             await mystic.delete()
         return await play_logs(message, streamtype=streamtype)
@@ -702,7 +702,7 @@ async def play_music(client, CallbackQuery, _):
     video = True if mode == "v" else None
     ffplay = True if fplay == "f" else None
     try:
-        await stream(
+        result = await stream(
             _,
             mystic,
             CallbackQuery.from_user.id,
@@ -718,8 +718,6 @@ async def play_music(client, CallbackQuery, _):
         ex_type = type(e).__name__
         err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
         return await mystic.edit_text(err)
-    # Only delete mystic when stream returned None (now-playing — card already sent).
-    # "queued" means mystic is the queue-card, keep it alive.
     if result is None:
         await mystic.delete()
     return
@@ -837,7 +835,7 @@ async def play_playlists_command(client, CallbackQuery, _):
     else:
         return await mystic.edit_text(_["play_3"])
     try:
-        await stream(
+        stream_result = await stream(
             _,
             mystic,
             user_id,
@@ -854,7 +852,7 @@ async def play_playlists_command(client, CallbackQuery, _):
         ex_type = type(e).__name__
         err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
         return await mystic.edit_text(err)
-    if result is None:
+    if stream_result is None:
         await mystic.delete()
     return
 

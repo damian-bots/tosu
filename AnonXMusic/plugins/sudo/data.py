@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 import os
 import asyncio
 from typing import Optional
@@ -11,7 +17,6 @@ from AnonXMusic import app
 from AnonXMusic.misc import SUDOERS
 from AnonXMusic.utils.database import update_bot_stats, get_bot_stats, get_served_chats
 
-# Import the new Chart Generator
 from AnonXMusic.utils.chart import generate_stats_image
 
 BOT_INFO: Optional[types.User] = None
@@ -48,14 +53,12 @@ async def safe_send_message(chat_id, text, reply_markup=None, max_retries: int =
 async def chat_stats_command(_, message: Message):
     msg = await message.reply_text("🎨 Generating Statistics Chart...")
     
-    # 1. Fetch Data
     try:
         stats = await get_bot_stats()
         total_chats = len(await get_served_chats())
     except Exception as e:
         return await msg.edit_text(f"❌ Failed to fetch database statistics: {e}")
 
-    # 2. Try to generate and send the Image Chart
     try:
         loop = asyncio.get_running_loop()
         image_path = await loop.run_in_executor(None, generate_stats_image, stats, total_chats)
@@ -69,7 +72,6 @@ async def chat_stats_command(_, message: Message):
         if os.path.exists(image_path):
             os.remove(image_path)
             
-    # 3. Fallback: If image generation fails, send the Text Table
     except Exception as e:
         def fmt(data):
             j = data.get("joined", 0)

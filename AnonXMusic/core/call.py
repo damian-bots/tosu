@@ -1,5 +1,8 @@
-# Copyright (c) 2025 AnonXMusic
-# Adapted to py-tgcalls >= 2.x / ntgcalls API
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
 
 import asyncio
 import os
@@ -10,7 +13,6 @@ from pyrogram import Client
 from pyrogram.errors import FloodWait, ChannelsTooMuch
 from pyrogram.types import InlineKeyboardMarkup
 
-# ── ntgcalls imports ────────────────────────────────────────────────────────
 from ntgcalls import (
     ConnectionError as NTGConnectionError,
     ConnectionNotFound,
@@ -19,7 +21,6 @@ from ntgcalls import (
 )
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
-# ────────────────────────────────────────────────────────────────────────────
 
 import config
 from AnonXMusic import LOGGER, YouTube, app
@@ -47,27 +48,23 @@ from strings import get_string
 autoend = {}
 counter = {}
 
-# ── Error-pattern helpers ───────────────────────────────────────────────────
-
 _RETRYABLE_TG_ERRORS = (
     "GROUPCALL_ADD_PARTICIPANTS_FAILED",
     "CHANNELS_TOO_MUCH",
 )
 
+
 def _is_frozen(exc: Exception) -> bool:
-    """Return True if this exception indicates the assistant account is frozen."""
     msg = str(exc).upper()
     return "FROZEN_METHOD_INVALID" in msg or "METHOD_INVALID" in msg
 
 
 def _is_retryable_call_error(exc: Exception) -> bool:
-    """Return True for transient group-call errors that are worth retrying."""
     msg = str(exc)
     return any(tag in msg for tag in _RETRYABLE_TG_ERRORS)
 
 
 async def _notify_owner(text: str) -> None:
-    """Send a warning to OWNER_ID (best-effort, never raises)."""
     try:
         owner_id = int(config.OWNER_ID)
         await app.send_message(owner_id, text, disable_web_page_preview=True)
@@ -75,10 +72,7 @@ async def _notify_owner(text: str) -> None:
         LOGGER(__name__).warning(f"[notify_owner] failed: {e}")
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
 async def _safe_tg_call(coro_fn, *args, retries: int = 4, base_delay: float = 3.0, **kwargs):
-    """Retry a Pyrogram coroutine on transient TCP/flood errors."""
     for attempt in range(1, retries + 1):
         try:
             return await coro_fn(*args, **kwargs)
@@ -107,12 +101,22 @@ def _make_stream(
     video: bool = False,
     seek_time: int = 0,
 ) -> types.MediaStream:
-    """Build a MediaStream for the new pytgcalls API."""
+    """
+    Build an optimized MediaStream for low-resource environments.
+
+    Audio: HIGH quality (48 kHz stereo) — best quality/CPU balance.
+    Video: SD_480p for small servers to prevent frame-drop lag;
+           switch to HD_720p only when VIDEO_QUALITY env is "hd".
+    """
     ffmpeg_params = f"-ss {seek_time}" if seek_time > 1 else None
+
+    hd_mode = getattr(config, "VIDEO_QUALITY", "sd").lower() == "hd"
+    video_quality = types.VideoQuality.HD_720p if hd_mode else types.VideoQuality.SD_480p
+
     return types.MediaStream(
         media_path=link,
         audio_parameters=types.AudioQuality.HIGH,
-        video_parameters=types.VideoQuality.HD_720p,
+        video_parameters=video_quality,
         audio_flags=types.MediaStream.Flags.REQUIRED,
         video_flags=(
             types.MediaStream.Flags.AUTO_DETECT
@@ -128,8 +132,6 @@ async def _clear_(chat_id):
     await remove_active_video_chat(chat_id)
     await remove_active_chat(chat_id)
 
-
-# ── Main Call class ──────────────────────────────────────────────────────────
 
 class Call(PyTgCalls):
     def __init__(self):
@@ -172,8 +174,6 @@ class Call(PyTgCalls):
             session_string=str(config.STRING5),
         )
         self.five = PyTgCalls(self.userbot5, cache_duration=100)
-
-    # ── Stream controls ──────────────────────────────────────────────────────
 
     async def pause_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
@@ -223,8 +223,6 @@ class Call(PyTgCalls):
         except Exception:
             pass
 
-    # ── Speed-up ─────────────────────────────────────────────────────────────
-
     async def speedup_stream(self, chat_id: int, file_path, speed, playing):
         assistant = await group_assistant(self, chat_id)
         if str(speed) != "1.0":
@@ -237,9 +235,10 @@ class Call(PyTgCalls):
                 vs = vs_map.get(str(speed), 1.0)
                 proc = await asyncio.create_subprocess_shell(
                     cmd=(
-                        f"ffmpeg -i {file_path} "
+                        f"ffmpeg -y -i {file_path} "
                         f"-filter:v setpts={vs}*PTS "
-                        f"-filter:a atempo={speed} {out}"
+                        f"-filter:a atempo={speed} "
+                        f"-threads 1 {out}"
                     ),
                     stdin=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -252,12 +251,12 @@ class Call(PyTgCalls):
         played, con_seconds = speed_converter(playing[0]["played"], speed)
         duration = seconds_to_min(dur)
         video = playing[0]["streamtype"] == "video"
-        stream = _make_stream(out, video=video)
+        stream_obj = _make_stream(out, video=video)
 
         if str(db[chat_id][0]["file"]) == str(file_path):
             await assistant.play(
                 chat_id=chat_id,
-                stream=stream,
+                stream=stream_obj,
                 config=types.GroupCallConfig(auto_start=False),
             )
         else:
@@ -274,8 +273,6 @@ class Call(PyTgCalls):
             db[chat_id][0]["speed_path"] = out
             db[chat_id][0]["speed"] = speed
 
-    # ── Skip / seek ──────────────────────────────────────────────────────────
-
     async def skip_stream(
         self,
         chat_id: int,
@@ -284,36 +281,32 @@ class Call(PyTgCalls):
         image: Union[bool, str] = None,
     ):
         assistant = await group_assistant(self, chat_id)
-        stream = _make_stream(link, video=bool(video))
+        stream_obj = _make_stream(link, video=bool(video))
         await assistant.play(
             chat_id=chat_id,
-            stream=stream,
+            stream=stream_obj,
             config=types.GroupCallConfig(auto_start=False),
         )
 
     async def seek_stream(self, chat_id, file_path, to_seek, duration, mode):
         assistant = await group_assistant(self, chat_id)
-        stream = _make_stream(file_path, video=(mode == "video"), seek_time=int(to_seek))
+        stream_obj = _make_stream(file_path, video=(mode == "video"), seek_time=int(to_seek))
         await assistant.play(
             chat_id=chat_id,
-            stream=stream,
+            stream=stream_obj,
             config=types.GroupCallConfig(auto_start=False),
         )
 
-    # ── Logger stream_call (pulse stream) ────────────────────────────────────
-
     async def stream_call(self, link):
         assistant = await group_assistant(self, config.LOGGER_ID)
-        stream = _make_stream(link, video=True)
+        stream_obj = _make_stream(link, video=True)
         await assistant.play(
             chat_id=config.LOGGER_ID,
-            stream=stream,
+            stream=stream_obj,
             config=types.GroupCallConfig(auto_start=False),
         )
         await asyncio.sleep(0.2)
         await assistant.leave_call(config.LOGGER_ID)
-
-    # ── Join call with full retry / error handling ───────────────────────────
 
     @error_logger(label="Assistant Join Call")
     async def join_call(
@@ -327,7 +320,7 @@ class Call(PyTgCalls):
         assistant = await group_assistant(self, chat_id)
         language = await get_lang(chat_id)
         _ = get_string(language)
-        stream = _make_stream(link, video=bool(video))
+        stream_obj = _make_stream(link, video=bool(video))
 
         max_retries = 5
         retry_delay = 3.0
@@ -337,13 +330,12 @@ class Call(PyTgCalls):
             try:
                 await assistant.play(
                     chat_id=chat_id,
-                    stream=stream,
+                    stream=stream_obj,
                     config=types.GroupCallConfig(auto_start=False),
                 )
                 last_exc = None
-                break  # success
+                break
 
-            # ── FLOOD_WAIT: back off, warn owner, retry ──────────────────────
             except FloodWait as fw:
                 wait = fw.value + 1
                 LOGGER(__name__).warning(
@@ -358,7 +350,6 @@ class Call(PyTgCalls):
                 if attempt == max_retries:
                     raise AssistantErr(_["call_flood_wait"].format(wait))
 
-            # ── FROZEN account: warn owner, abort immediately ────────────────
             except Exception as e:
                 if _is_frozen(e):
                     LOGGER(__name__).error(
@@ -367,8 +358,6 @@ class Call(PyTgCalls):
                     await _notify_owner(_["owner_warn_frozen"].format(chat_id, str(e)))
                     raise AssistantErr(_["call_frozen"])
 
-                # ── Retryable transient errors (GROUPCALL_ADD_PARTICIPANTS_FAILED,
-                #    CHANNELS_TOO_MUCH) ─────────────────────────────────────────
                 elif _is_retryable_call_error(e):
                     if attempt < max_retries:
                         wait = retry_delay * attempt
@@ -381,7 +370,6 @@ class Call(PyTgCalls):
                         continue
                     raise AssistantErr(_["call_retryable_failed"].format(str(e)[:80]))
 
-                # ── ChannelsTooMuch: also retryable ──────────────────────────
                 elif isinstance(e, ChannelsTooMuch):
                     if attempt < max_retries:
                         wait = retry_delay * attempt
@@ -394,7 +382,6 @@ class Call(PyTgCalls):
                         continue
                     raise AssistantErr(_["call_channels_too_much"])
 
-                # ── NoActiveGroupCall: retry a few times ────────────────────
                 elif isinstance(e, exceptions.NoActiveGroupCall):
                     if attempt < max_retries:
                         LOGGER(__name__).warning(
@@ -406,10 +393,7 @@ class Call(PyTgCalls):
                         continue
                     raise AssistantErr(_["call_8"])
 
-                # ── Already joined: not an error, just continue ──────────────
                 elif isinstance(e, exceptions.NotInCallError):
-                    # pytgcalls 2.x removed AlreadyJoinedError;
-                    # attempt to resume by calling play again once
                     LOGGER(__name__).warning(
                         f"[join_call] NotInCallError for {chat_id}; will retry once"
                     )
@@ -419,14 +403,12 @@ class Call(PyTgCalls):
                         continue
                     raise AssistantErr(_["call_9"])
 
-                # ── Server / connection errors ───────────────────────────────
                 elif isinstance(e, (TelegramServerError, NTGConnectionError, ConnectionNotFound)):
                     raise AssistantErr(_["call_10"])
 
                 elif isinstance(e, RTMPStreamingUnsupported):
                     raise AssistantErr(_["call_11"])
 
-                # ── Unknown: re-raise ────────────────────────────────────────
                 else:
                     raise
 
@@ -442,8 +424,6 @@ class Call(PyTgCalls):
             users = len(await assistant.get_participants(chat_id))
             if users == 1:
                 autoend[chat_id] = datetime.now() + timedelta(minutes=1)
-
-    # ── Change stream (queue advance) ────────────────────────────────────────
 
     @error_logger(label="Change Stream")
     async def change_stream(self, client, chat_id):
@@ -483,10 +463,10 @@ class Call(PyTgCalls):
                 db[chat_id][0]["speed"] = 1.0
             video = (str(streamtype) == "video")
 
-            async def _play(stream):
+            async def _play(stream_obj):
                 await client.play(
                     chat_id=chat_id,
-                    stream=stream,
+                    stream=stream_obj,
                     config=types.GroupCallConfig(auto_start=False),
                 )
 
@@ -496,9 +476,9 @@ class Call(PyTgCalls):
                     return await _safe_tg_call(
                         app.send_message, original_chat_id, text=_["call_6"]
                     )
-                stream = _make_stream(link, video=video)
+                stream_obj = _make_stream(link, video=video)
                 try:
-                    await _play(stream)
+                    await _play(stream_obj)
                 except Exception:
                     return await _safe_tg_call(
                         app.send_message, original_chat_id, text=_["call_6"]
@@ -535,9 +515,9 @@ class Call(PyTgCalls):
                     return await mystic.edit_text(
                         _["call_6"], disable_web_page_preview=True
                     )
-                stream = _make_stream(file_path, video=video)
+                stream_obj = _make_stream(file_path, video=video)
                 try:
-                    await _play(stream)
+                    await _play(stream_obj)
                 except Exception:
                     return await _safe_tg_call(
                         app.send_message, original_chat_id, text=_["call_6"]
@@ -561,9 +541,9 @@ class Call(PyTgCalls):
                 db[chat_id][0]["markup"] = "stream"
 
             elif "index_" in queued:
-                stream = _make_stream(videoid, video=video)
+                stream_obj = _make_stream(videoid, video=video)
                 try:
-                    await _play(stream)
+                    await _play(stream_obj)
                 except Exception:
                     return await _safe_tg_call(
                         app.send_message, original_chat_id, text=_["call_6"]
@@ -589,9 +569,9 @@ class Call(PyTgCalls):
                         _["play_dl_failed"].format(platform),
                         disable_web_page_preview=True,
                     )
-                stream = _make_stream(queued, video=video)
+                stream_obj = _make_stream(queued, video=video)
                 try:
-                    await _play(stream)
+                    await _play(stream_obj)
                 except Exception:
                     return await _safe_tg_call(
                         app.send_message, original_chat_id, text=_["call_6"]
@@ -644,8 +624,6 @@ class Call(PyTgCalls):
                     db[chat_id][0]["mystic"] = run
                     db[chat_id][0]["markup"] = "stream"
 
-    # ── Ping ─────────────────────────────────────────────────────────────────
-
     async def ping(self):
         pings = []
         for attr, flag in [
@@ -659,8 +637,6 @@ class Call(PyTgCalls):
                 pings.append(getattr(self, attr).ping)
         return str(round(sum(pings) / len(pings), 3)) if pings else "0"
 
-    # ── Boot ─────────────────────────────────────────────────────────────────
-
     async def start(self):
         LOGGER(__name__).info("Starting PyTgCalls Client...\n")
         PyTgCallsSession.notice_displayed = True
@@ -673,8 +649,6 @@ class Call(PyTgCalls):
         ]:
             if flag:
                 await getattr(self, attr).start()
-
-    # ── Decorators (event handlers) ──────────────────────────────────────────
 
     async def decorators(self):
         clients = [

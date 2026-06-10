@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 import asyncio
 
 from pyrogram.enums import ChatMemberStatus
@@ -27,7 +33,6 @@ from strings import get_string
 
 links = {}
 
-# Commands that require admin / auth-user access regardless of playtype setting
 _FORCE_COMMANDS = {"playforce", "vplayforce", "cplayforce", "cvplayforce"}
 
 
@@ -102,13 +107,11 @@ def PlayWrapper(command):
         playmode = await get_playmode(message.chat.id)
         playty = await get_playtype(message.chat.id)
 
-        # --- Force-play commands: always admin / auth-user only ---
         cmd = message.command[0].lower()
         if cmd in _FORCE_COMMANDS:
             if message.from_user.id not in SUDOERS:
                 admins = adminlist.get(message.chat.id)
                 if not admins or message.from_user.id not in admins:
-                    # Also allow authorized users
                     try:
                         auth_users_dict = await get_authuser_names(message.chat.id)
                         auth_ids = [int(uid) for uid in auth_users_dict.keys()]
@@ -117,7 +120,6 @@ def PlayWrapper(command):
                     if message.from_user.id not in auth_ids:
                         return await message.reply_text(_["raw_4"])
         else:
-            # Normal play commands — respect playtype setting
             if playty != "Everyone":
                 if message.from_user.id not in SUDOERS:
                     admins = adminlist.get(message.chat.id)

@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 """
 AnonXMusic/platforms/Spotify.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -32,7 +38,6 @@ _SPOTIFY_RE = re.compile(
     r"/(track|playlist|album|artist)/[a-zA-Z0-9]+(\?.*)?$"
 )
 
-# ── spotipy helper ────────────────────────────────────────────────────────────
 
 def _sp_client():
     """
@@ -60,7 +65,6 @@ def _spotipy_track_details(sp_track: dict) -> dict:
     throughout the bot.  Works for both full track objects and the
     simplified objects inside playlist/album items.
     """
-    # Spotipy wraps playlist track items in {"track": {...}}
     t = sp_track.get("track") or sp_track
 
     title     = t.get("name") or "Unknown"
@@ -114,7 +118,6 @@ async def _spotipy_playlist_tracks(url: str) -> list[dict]:
                 None, lambda: sp.album_tracks(playlist_id, limit=50)
             )
             items = raw.get("items") or []
-            # album tracks don't carry album art — fetch album separately
             album_info = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: sp.album(playlist_id)
             )
@@ -156,13 +159,11 @@ async def _spotipy_playlist_tracks(url: str) -> list[dict]:
         return []
 
 
-# ── Main SpotifyAPI class ─────────────────────────────────────────────────────
 
 class SpotifyAPI:
     def __init__(self) -> None:
         self.regex = r"^(https:\/\/open.spotify.com\/)(.*)$"
 
-    # ── validity ───────────────────────────────────────────────────────────
     async def valid(self, link: str) -> bool:
         return bool(_SPOTIFY_RE.match(link.strip())) if link else False
 
@@ -170,7 +171,6 @@ class SpotifyAPI:
         from AnonXMusic.platforms.Api import ApiPlatform
         return ApiPlatform()
 
-    # ── single track ───────────────────────────────────────────────────────
     async def track(self, link: str):
         """
         Returns (track_details_dict, track_id).
@@ -179,7 +179,6 @@ class SpotifyAPI:
         Tier-2: spotipy
         Tier-3: URL-slug YouTube search
         """
-        # Tier 1 — API-2
         if config.API_URL2 and config.API_KEY2:
             try:
                 result = await self._api().track(link)
@@ -188,7 +187,6 @@ class SpotifyAPI:
             except Exception as exc:
                 LOGGER.warning(f"Spotify.track API-2 failed: {exc}")
 
-        # Tier 2 — spotipy
         try:
             sp = await asyncio.get_event_loop().run_in_executor(None, _sp_client)
             if sp:
@@ -202,7 +200,6 @@ class SpotifyAPI:
         except Exception as exc:
             LOGGER.warning(f"Spotify.track spotipy fallback failed: {exc}")
 
-        # Tier 3 — URL-slug search
         return await self._yt_fallback_track(link)
 
     async def _yt_fallback_track(self, link: str):
@@ -226,7 +223,6 @@ class SpotifyAPI:
             LOGGER.warning(f"Spotify.track YT-slug fallback failed: {exc}")
         return None
 
-    # ── playlist / album / artist ──────────────────────────────────────────
     async def playlist(self, url: str):
         """Returns (list_of_track_dicts, playlist_id)."""
         return await self._fetch_collection(url, "playlist")
@@ -248,7 +244,6 @@ class SpotifyAPI:
         """
         collection_id = url.rstrip("/").split("/")[-1].split("?")[0]
 
-        # Tier 1 — API-2
         if config.API_URL2 and config.API_KEY2:
             try:
                 result = await self._api().playlist(url)
@@ -257,7 +252,6 @@ class SpotifyAPI:
             except Exception as exc:
                 LOGGER.warning(f"Spotify._fetch_collection API-2 failed: {exc}")
 
-        # Tier 2 — spotipy
         try:
             tracks = await _spotipy_playlist_tracks(url)
             if tracks:
@@ -269,13 +263,11 @@ class SpotifyAPI:
         except Exception as exc:
             LOGGER.warning(f"Spotify._fetch_collection spotipy failed: {exc}")
 
-        # Both tiers failed — return empty
         LOGGER.error(
             f"Spotify: both API-2 and spotipy failed for {kind} {url}"
         )
         return [], collection_id
 
-    # ── download ───────────────────────────────────────────────────────────
     async def download(self, url: str, video: bool = False) -> Optional[str]:
         """
         Download a Spotify track via API-2.

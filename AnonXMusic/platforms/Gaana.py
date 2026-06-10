@@ -1,3 +1,9 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 """AnonXMusic/platforms/Gaana.py — Gaana via API-2.
 
 Flow for single track:
@@ -63,7 +69,6 @@ class GaanaAPI:
         if not self._ready():
             return None
         api = self._api()
-        # Step 1: get CDN info from /api/track
         info = await api.get_track(url)
         if not info:
             LOGGER.error(f"Gaana: /api/track returned nothing for {url}")
@@ -82,7 +87,6 @@ class GaanaAPI:
         track_id: str = info.get("id") or url.rstrip("/").split("/")[-1]
         LOGGER.info(f"Gaana: downloading from CDN for track_id={track_id}")
 
-        # Step 2: direct download (Gaana tracks are plain mp3, not encrypted)
         from AnonXMusic.platforms.Api import _download_direct
         result = await _download_direct(cdn_url, track_id, "mp3")
         if result:

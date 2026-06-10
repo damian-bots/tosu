@@ -1,5 +1,9 @@
-# Authored By Certified Coders © 2025
-# Modified for Team Arc - v1.0.0
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        Copyright © tusar404 — All Rights Reserved               ║
+# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
+# ║        Unauthorized copying or distribution is prohibited        ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
 import os
 import re
 import aiofiles
@@ -9,31 +13,26 @@ from youtubesearchpython.__future__ import VideosSearch
 from config import YOUTUBE_IMG_URL
 from AnonXMusic.core.dir import CACHE_DIR
 
-# --- Layout Configuration ---
 PANEL_W, PANEL_H = 800, 580
 PANEL_X = (1280 - PANEL_W) // 2
 PANEL_Y = 70
 TRANSPARENCY = 230
 CORNER_RADIUS = 30
 
-# Image Positioning
 THUMB_W, THUMB_H = 580, 326  # 16:9 Aspect Ratio
 THUMB_X = PANEL_X + (PANEL_W - THUMB_W) // 2
 THUMB_Y = PANEL_Y + 40
 
-# Text Positioning
 TEXT_CENTER_X = PANEL_X + (PANEL_W // 2)
 TITLE_Y = THUMB_Y + THUMB_H + 25
 META_Y = TITLE_Y + 45
 BAR_Y = META_Y + 50
 
-# Branding
 BRAND_TEXT = "Team Arc"
 BRAND_Y = PANEL_Y + PANEL_H - 50
 
 MAX_TITLE_WIDTH = 700
 
-# Font paths — updated for AnonXMusic assets directory
 _FONT_TITLE_PATH = "AnonXMusic/assets/font2.ttf"
 _FONT_REG_PATH   = "AnonXMusic/assets/font.ttf"
 _FONT_BRAND_PATH = "AnonXMusic/assets/font2.ttf"
@@ -54,7 +53,6 @@ async def get_thumb(videoid: str) -> str:
     if os.path.exists(cache_path):
         return cache_path
 
-    # --- 1. Fetch Video Metadata ---
     try:
         results = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
         results_data = await results.next()
@@ -78,7 +76,6 @@ async def get_thumb(videoid: str) -> str:
     is_live = not duration or str(duration).strip().lower() in {"", "live", "live now"}
     duration_text = "LIVE" if is_live else duration or "00:00"
 
-    # --- 2. Download Thumbnail ---
     thumb_path = os.path.join(CACHE_DIR, f"thumb{videoid}.png")
     downloaded = False
     try:
@@ -94,7 +91,6 @@ async def get_thumb(videoid: str) -> str:
     if not downloaded or not os.path.exists(thumb_path):
         return YOUTUBE_IMG_URL
 
-    # --- 3. Graphics Composition ---
     try:
         try:
             font_title = ImageFont.truetype(_FONT_TITLE_PATH, 36)
@@ -103,12 +99,10 @@ async def get_thumb(videoid: str) -> str:
         except OSError:
             font_title = font_reg = font_brand = ImageFont.load_default()
 
-        # Background — blurred & darkened
         base = Image.open(thumb_path).resize((1280, 720)).convert("RGBA")
         bg = base.filter(ImageFilter.GaussianBlur(radius=15))
         bg = ImageEnhance.Brightness(bg).enhance(0.5)
 
-        # Frosted white panel
         overlay = Image.new("RGBA", (PANEL_W, PANEL_H), (255, 255, 255, TRANSPARENCY))
         mask = Image.new("L", (PANEL_W, PANEL_H), 0)
         ImageDraw.Draw(mask).rounded_rectangle((0, 0, PANEL_W, PANEL_H), CORNER_RADIUS, fill=255)
@@ -116,13 +110,11 @@ async def get_thumb(videoid: str) -> str:
 
         draw = ImageDraw.Draw(bg)
 
-        # Thumbnail with rounded corners
         thumb_img = base.resize((THUMB_W, THUMB_H))
         thumb_mask = Image.new("L", (THUMB_W, THUMB_H), 0)
         ImageDraw.Draw(thumb_mask).rounded_rectangle((0, 0, THUMB_W, THUMB_H), 15, fill=255)
         bg.paste(thumb_img, (THUMB_X, THUMB_Y), thumb_mask)
 
-        # --- 4. Text ---
         trunc_title = trim_to_width(title, font_title, MAX_TITLE_WIDTH)
         title_w = font_title.getlength(trunc_title)
         draw.text((TEXT_CENTER_X - title_w / 2, TITLE_Y), trunc_title, fill=(20, 20, 20), font=font_title)
@@ -131,7 +123,6 @@ async def get_thumb(videoid: str) -> str:
         meta_w = font_reg.getlength(meta_text)
         draw.text((TEXT_CENTER_X - meta_w / 2, META_Y), meta_text, fill=(60, 60, 60), font=font_reg)
 
-        # Progress bar
         BAR_WIDTH, BAR_HEIGHT = 550, 8
         BAR_START_X = TEXT_CENTER_X - (BAR_WIDTH // 2)
 
@@ -150,12 +141,10 @@ async def get_thumb(videoid: str) -> str:
             fill=(20, 20, 20)
         )
 
-        # Timestamps
         draw.text((BAR_START_X, BAR_Y + 20), "00:00", fill=(80, 80, 80), font=font_reg)
         dur_w = font_reg.getlength(duration_text)
         draw.text((BAR_START_X + BAR_WIDTH - dur_w, BAR_Y + 20), duration_text, fill=(20, 20, 20), font=font_reg)
 
-        # --- 5. Branding ---
         brand_w = font_brand.getlength(BRAND_TEXT)
         draw.text(
             (TEXT_CENTER_X - brand_w / 2, BRAND_Y),
@@ -164,7 +153,6 @@ async def get_thumb(videoid: str) -> str:
             font=font_brand,
         )
 
-        # Cleanup
         try:
             os.remove(thumb_path)
         except OSError:
