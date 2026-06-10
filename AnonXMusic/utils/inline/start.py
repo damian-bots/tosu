@@ -5,7 +5,7 @@
 # ╚══════════════════════════════════════════════════════════════════╝
 
 from pyrogram.types import InlineKeyboardButton
-
+from pyrogram.enums import ButtonStyle
 import config
 from AnonXMusic import app
 
@@ -28,6 +28,7 @@ def private_panel(_):
             InlineKeyboardButton(
                 text=_["S_B_3"],
                 url=f"https://t.me/{app.username}?startgroup=true",
+                style=ButtonStyle.PRIMARY,
             )
         ],
         [InlineKeyboardButton(text=_["S_B_4"], callback_data="settings_back_helper")],
