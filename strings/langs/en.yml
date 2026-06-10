@@ -155,8 +155,8 @@ play_22 : "Select the playback mode for this group : {0}"
 play_disabled : "<b>{0} is Currently Unavailable</b>\n\nThis platform has been disabled by the bot owner. Please try a different source or check back later."
 play_dl_failed : "<b>Failed to Download</b>\n\nWe couldn't download the track from {0}. This is usually a temporary issue.\n\nIf it persists, please contact support."
 play_dl_no_audio : "<b>No Audio Source Found</b>\n\nNo playable audio was found for this track. The source may be restricted, removed, or region-locked.\n\nTry searching for a different version or contact support if this continues."
-play_dl_api_failed : "⚠️ <b>Download Failed — {0}</b>\n\nOur download servers couldn't retrieve this track after multiple attempts. This is usually a temporary issue on the source side.\n\n<i>Try again in a moment, or search for a different version using /play.</i>"
-play_dl_status : "⬇️ Downloading <b>{0}</b>…"
+play_dl_api_failed : "⚠️ <b>Download Failed — {0}</b>\n\nOur download servers couldn't retrieve this track after multiple attempts. This is usually a temporary issue on the source side.\n\nTry again in a moment, or search for a different version using /play."
+play_dl_status : "Downloading {0}…"
 
 raw_1 : "<b>Direct URL Detected</b>\n\nProcessing your link, please wait..."
 raw_2 : "<b>Invalid or Unplayable Link</b>\n\nThe provided URL could not be opened or is not a valid media link.\n\nPlease double-check the URL and try again."
@@ -337,4 +337,4 @@ call_channels_too_much : "📛 <b>Too Many Channels</b>\n\nThe assistant has joi
 # ── Owner warning messages (sent to OWNER_ID) ───────────────────────────────
 owner_warn_flood : "⚠️ <b>FloodWait Alert</b>\n\n<b>Chat:</b> <code>{0}</code>\n<b>Wait time:</b> <b>{1}s</b>\n\nThe assistant hit a FloodWait while joining a group call. Bot will resume automatically after the wait."
 
-owner_warn_frozen : "🚨 <b>FROZEN ACCOUNT DETECTED</b>\n\n<b>Chat:</b> <code>{0}</code>\n<b>Error:</b> <code>{1}</code>\n\nAn assistant account has been frozen by Telegram (FROZEN_METHOD_INVALID). Please check your session strings and consider replacing the frozen account."
+owner_warn_frozen : "🚨 <b>FROZEN ACCOUNT DETECTED</b>\n\n<b>Chat:</b> <code>{0}</code>\n<b>Error:</b> <pre>{1}</pre>\n\nAn assistant account has been frozen by Telegram (FROZEN_METHOD_INVALID). Please check your session strings and consider replacing the frozen account."
