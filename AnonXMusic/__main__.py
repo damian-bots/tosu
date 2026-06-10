@@ -65,13 +65,5 @@ async def init():
 
 
 if __name__ == "__main__":
-    try:
-        import uvloop
-        loop = uvloop.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(init())
-        finally:
-            loop.close()
-    except ImportError:
-        asyncio.run(init())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(init())
