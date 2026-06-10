@@ -588,7 +588,11 @@ async def play_commnd(
             ex_type = type(e).__name__
             err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
             return await mystic.edit_text(err)
-        await mystic.delete()
+        # "queued" sentinel → mystic is the queue-card, leave it alive
+        # Any other truthy return from stream() → also leave mystic (error was already edited in)
+        # Only delete mystic when stream() returned None (= now-playing, card already sent)
+        if result is None:
+            await mystic.delete()
         return await play_logs(message, streamtype=streamtype)
     else:
         if plist_type:
@@ -714,7 +718,11 @@ async def play_music(client, CallbackQuery, _):
         ex_type = type(e).__name__
         err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
         return await mystic.edit_text(err)
-    return await mystic.delete()
+    # Only delete mystic when stream returned None (now-playing — card already sent).
+    # "queued" means mystic is the queue-card, keep it alive.
+    if result is None:
+        await mystic.delete()
+    return
 
 @app.on_callback_query(filters.regex("AnonymousAdmin") & ~BANNED_USERS)
 async def anonymous_check(client, CallbackQuery):
@@ -846,7 +854,9 @@ async def play_playlists_command(client, CallbackQuery, _):
         ex_type = type(e).__name__
         err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
         return await mystic.edit_text(err)
-    return await mystic.delete()
+    if result is None:
+        await mystic.delete()
+    return
 
 @app.on_callback_query(filters.regex("slider") & ~BANNED_USERS)
 @languageCB

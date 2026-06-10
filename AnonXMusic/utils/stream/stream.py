@@ -464,6 +464,16 @@ async def stream(
         duration_min = result["duration_min"]
         thumbnail    = result["thumb"]
         status       = True if video else None
+
+        # ── Edit "Searching..." → "Downloading {title}..." ────────────────────
+        try:
+            await mystic.edit_text(
+                _["play_dl_status"].format(title[:50]),
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            pass
+
         try:
             file_path, direct = await YouTube.download(
                 vidid, mystic, videoid=True, video=status
@@ -476,9 +486,11 @@ async def stream(
             )
             file_path = None
             direct    = False
+
         if not file_path:
+            # API exhausted all retries — tell the user clearly
             return await mystic.edit_text(
-                _["play_dl_no_audio"],
+                _["play_dl_api_failed"].format(title[:50]),
                 disable_web_page_preview=True,
             )
         if direct and not os.path.isfile(file_path):
@@ -486,6 +498,7 @@ async def stream(
                 _["play_dl_failed"].format("YouTube"),
                 disable_web_page_preview=True,
             )
+
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
@@ -500,27 +513,29 @@ async def stream(
             )
             position = len(db.get(chat_id)) - 1
             if position == 0:
-                # Position 0 means this track is NOW playing (first/only in queue).
-                # Show the stream card instead of a queue-added text.
-                button  = stream_markup(_, chat_id)
+                # This track became position 0 — it's now playing, show the card.
+                button    = stream_markup(_, chat_id)
                 _yt_thumb = await get_thumb(vidid) if vidid else None
-                _cover = _yt_thumb or thumbnail or config.STREAM_IMG_URL
-                _caption = _["stream_1"].format(
+                _cover    = _yt_thumb or thumbnail or config.STREAM_IMG_URL
+                _caption  = _["stream_1"].format(
                     f"https://t.me/{app.username}",
                     title[:23],
                     duration_min,
                     user_name,
                 )
                 run_q = await _edit_or_send_photo(mystic, app, original_chat_id, _cover, _caption, button)
-                db[chat_id][0]["mystic"]  = run_q
-                db[chat_id][0]["markup"]  = "stream"
+                db[chat_id][0]["mystic"] = run_q
+                db[chat_id][0]["markup"] = "stream"
             else:
-                button   = aq_markup(_, chat_id)
-                run_q = await mystic.edit_text(
+                # Track is queued — edit mystic to the queue card and KEEP it
+                button = aq_markup(_, chat_id)
+                await mystic.edit_text(
                     text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                     reply_markup=InlineKeyboardMarkup(button),
                     disable_web_page_preview=True,
                 )
+                # Return a sentinel so play.py knows NOT to delete mystic
+                return "queued"
         else:
             if not forceplay:
                 db[chat_id] = []
@@ -578,27 +593,22 @@ async def stream(
             )
             position = len(db.get(chat_id)) - 1
             if position == 0:
-                # Position 0 means this track is NOW playing (first/only in queue).
-                # Show the stream card instead of a queue-added text.
-                button  = stream_markup(_, chat_id)
-                _yt_thumb = await get_thumb(vidid) if vidid else None
-                _cover = _yt_thumb or thumbnail or config.STREAM_IMG_URL
+                button   = stream_markup(_, chat_id)
+                _cover   = config.SOUNCLOUD_IMG_URL
                 _caption = _["stream_1"].format(
-                    f"https://t.me/{app.username}",
-                    title[:23],
-                    duration_min,
-                    user_name,
+                    config.SUPPORT_CHAT, title[:23], duration_min, user_name
                 )
                 run_q = await _edit_or_send_photo(mystic, app, original_chat_id, _cover, _caption, button)
-                db[chat_id][0]["mystic"]  = run_q
-                db[chat_id][0]["markup"]  = "stream"
+                db[chat_id][0]["mystic"] = run_q
+                db[chat_id][0]["markup"] = "stream"
             else:
-                button   = aq_markup(_, chat_id)
-                run_q = await mystic.edit_text(
+                button = aq_markup(_, chat_id)
+                await mystic.edit_text(
                     text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                     reply_markup=InlineKeyboardMarkup(button),
                     disable_web_page_preview=True,
                 )
+                return "queued"
         else:
             if not forceplay:
                 db[chat_id] = []
@@ -667,27 +677,20 @@ async def stream(
             )
             position = len(db.get(chat_id)) - 1
             if position == 0:
-                # Position 0 means this track is NOW playing (first/only in queue).
-                # Show the stream card instead of a queue-added text.
-                button  = stream_markup(_, chat_id)
-                _yt_thumb = await get_thumb(vidid) if vidid else None
-                _cover = _yt_thumb or thumbnail or config.STREAM_IMG_URL
-                _caption = _["stream_1"].format(
-                    f"https://t.me/{app.username}",
-                    title[:23],
-                    duration_min,
-                    user_name,
-                )
-                run_q = await _edit_or_send_photo(mystic, app, original_chat_id, _cover, _caption, button)
-                db[chat_id][0]["mystic"]  = run_q
-                db[chat_id][0]["markup"]  = "stream"
+                button   = stream_markup(_, chat_id)
+                run_q = await _edit_or_send_photo(mystic, app, original_chat_id, cover_img, _["stream_1"].format(
+                    link or config.SUPPORT_CHAT, title[:23], duration_min, user_name
+                ), button)
+                db[chat_id][0]["mystic"] = run_q
+                db[chat_id][0]["markup"] = "stream"
             else:
-                button   = aq_markup(_, chat_id)
-                run_q = await mystic.edit_text(
+                button = aq_markup(_, chat_id)
+                await mystic.edit_text(
                     text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                     reply_markup=InlineKeyboardMarkup(button),
                     disable_web_page_preview=True,
                 )
+                return "queued"
         else:
             if not forceplay:
                 db[chat_id] = []
@@ -750,11 +753,12 @@ async def stream(
                 db[chat_id][0]["markup"]  = "stream"
             else:
                 button   = aq_markup(_, chat_id)
-                run_q = await mystic.edit_text(
+                await mystic.edit_text(
                     text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                     reply_markup=InlineKeyboardMarkup(button),
                     disable_web_page_preview=True,
                 )
+                return "queued"
         else:
             if not forceplay:
                 db[chat_id] = []
@@ -817,11 +821,12 @@ async def stream(
                 db[chat_id][0]["markup"]  = "stream"
             else:
                 button   = aq_markup(_, chat_id)
-                run_q = await mystic.edit_text(
+                await mystic.edit_text(
                     text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                     reply_markup=InlineKeyboardMarkup(button),
                     disable_web_page_preview=True,
                 )
+                return "queued"
         else:
             if not forceplay:
                 db[chat_id] = []
@@ -889,6 +894,7 @@ async def stream(
                     text=_["queue_4"].format(position, title[:27], duration_min, user_name),
                     reply_markup=InlineKeyboardMarkup(button),
                 )
+                return "queued"
         else:
             if not forceplay:
                 db[chat_id] = []
