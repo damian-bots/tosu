@@ -5,7 +5,7 @@
 # ╚══════════════════════════════════════════════════════════════════╝
 
 import math
-
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton
 
 from AnonXMusic.utils.formatters import time_to_seconds
@@ -63,6 +63,7 @@ def stream_markup_timer(_, chat_id, played, dur):
             InlineKeyboardButton(
                 text=f"{played} {bar} {dur}",
                 callback_data="GetTimer",
+                style=ButtonStyle.PRIMARY,
             )
         ],
         [
