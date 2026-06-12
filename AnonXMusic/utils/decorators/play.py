@@ -152,10 +152,19 @@ def PlayWrapper(command):
                     get.status == ChatMemberStatus.BANNED
                     or get.status == ChatMemberStatus.RESTRICTED
                 ):
+                    unban_markup = InlineKeyboardMarkup([
+                        [
+                            InlineKeyboardButton(
+                                text="🔓 Unban Assistant",
+                                callback_data=f"unban_assistant {chat_id}|{userbot.id}",
+                            )
+                        ]
+                    ])
                     return await message.reply_text(
                         _["call_2"].format(
                             app.mention, userbot.id, userbot.name, userbot.username
-                        )
+                        ),
+                        reply_markup=unban_markup,
                     )
             except UserNotParticipant:
                 if chat_id in links:

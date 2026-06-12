@@ -24,6 +24,7 @@ from youtubesearchpython.__future__ import VideosSearch
 import config
 from AnonXMusic import app as TG_APP
 from AnonXMusic.logging import LOGGER as _LOGGER
+from AnonXMusic.utils.error_logger import error_logger
 from AnonXMusic.utils.database import (
     get_search_cache,
     increment_api_usage,
@@ -53,33 +54,6 @@ _session: Optional[aiohttp.ClientSession] = None
 _session_lock = asyncio.Lock()
 _MONGO_CLIENT: Optional[AsyncIOMotorClient] = None
 _TG_FLOOD_COOLDOWN: float = 0.0
-
-# ── Error helpers ─────────────────────────────────────────────────────────────
-
-async def _log_error(context: str, exc: Exception) -> None:
-    """Print full traceback to terminal AND forward to ERROR_LOG_ID."""
-    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-    LOGGER.error(f"[YouTube] {context}:\n{tb}")
-
-    try:
-        import html
-        from pyrogram.enums import ParseMode
-        text = (
-            f"🚨 <b>YouTube Error</b>\n\n"
-            f"📌 <b>Context:</b> <code>{html.escape(context)}</code>\n"
-            f"❌ <b>Exception:</b> <code>{html.escape(type(exc).__name__)}</code>\n"
-            f"💬 <b>Message:</b> <code>{html.escape(str(exc))}</code>\n\n"
-            f"📄 <b>Traceback:</b>\n<pre>{html.escape(tb[:3000])}</pre>"
-        )
-        await TG_APP.send_message(
-            chat_id=config.ERROR_LOG_ID,
-            text=text,
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
-        )
-    except Exception as send_err:
-        LOGGER.warning(f"[YouTube] Could not send error to ERROR_LOG_ID: {send_err}")
-
 
 # ── Cookies ───────────────────────────────────────────────────────────────────
 
@@ -125,7 +99,7 @@ async def _is_media(track_id: str, is_video: bool = False) -> bool:
     try:
         return bool(await col.find_one({"track_id": track_id, "isVideo": is_video}, {"_id": 1}))
     except Exception as e:
-        await _log_error(f"MongoDB is_media({track_id})", e)
+        LOGGER.error(f"[YouTube] MongoDB is_media({track_id}): {e}")
         return False
 
 
@@ -138,7 +112,7 @@ async def _get_media_msg_id(track_id: str, is_video: bool = False) -> Optional[i
         if doc and doc.get("message_id"):
             return int(doc["message_id"])
     except Exception as e:
-        await _log_error(f"MongoDB get_media_msg_id({track_id})", e)
+        LOGGER.error(f"[YouTube] MongoDB get_media_msg_id({track_id}): {e}")
     return None
 
 
@@ -220,7 +194,7 @@ async def _download_from_media_db(track_id: str, is_video: bool) -> Optional[str
                 msg_id = await _get_media_msg_id(k, is_video)
                 break
     except Exception as e:
-        await _log_error(f"Media-DB lookup failed for {track_id}", e)
+        LOGGER.error(f"[YouTube] Media-DB lookup failed for {track_id}: {e}")
         return None
 
     if not msg_id:
@@ -248,13 +222,13 @@ async def _download_from_media_db(track_id: str, is_video: bool) -> Optional[str
         LOGGER.info(f"[MediaDB] Channel cache hit › {track_id}")
         return final_path
     except asyncio.TimeoutError as e:
-        await _log_error(f"Media-DB download timeout for {track_id}", e)
+        LOGGER.error(f"[YouTube] Media-DB download timeout for {track_id}: {e}")
         return None
     except Exception as e:
         if "FloodWait" in type(e).__name__:
             import time
             _TG_FLOOD_COOLDOWN = time.time() + getattr(e, "value", 30) + 5
-        await _log_error(f"Media-DB download failed for {track_id}", e)
+        LOGGER.error(f"[YouTube] Media-DB download failed for {track_id}: {e}")
         return None
 
 
@@ -294,7 +268,7 @@ async def _api1_create_job(
                     continue
                 return job_id
         except Exception as e:
-            await _log_error(f"API-1 create_job attempt {attempt+1} for {video_id}", e)
+            LOGGER.error(f"[YouTube] API-1 create_job attempt {attempt+1} for {video_id}: {e}")
             await asyncio.sleep(1)
     return None
 
@@ -336,7 +310,7 @@ async def _api1_get_url(
                 LOGGER.info(f"[API-1] Download URL ready (attempt {attempt})")
                 return full_url
         except Exception as e:
-            await _log_error(f"API-1 get_url attempt {attempt} for job {job_id}", e)
+            LOGGER.error(f"[YouTube] API-1 get_url attempt {attempt} for job {job_id}: {e}")
         await asyncio.sleep(3)
 
     LOGGER.error(f"[API-1] get_url exhausted {V2_POLL_RETRIES} retries for job {job_id}")
@@ -363,7 +337,7 @@ async def _api1_save_file(
         LOGGER.error(f"[API-1] save_file resulted in empty file at {out_path}")
         return None
     except Exception as e:
-        await _log_error(f"API-1 save_file from {url}", e)
+        LOGGER.error(f"[YouTube] API-1 save_file from {url}: {e}")
         return None
 
 
@@ -427,7 +401,7 @@ async def _optimized_download(link: str, is_video: bool) -> Optional[str]:
             if db_path and os.path.exists(db_path):
                 return db_path
         except Exception as e:
-            await _log_error(f"Media-DB lookup for {vid}", e)
+            LOGGER.error(f"[YouTube] Media-DB lookup for {vid}: {e}")
 
     # 2. API-1
     try:
@@ -435,7 +409,7 @@ async def _optimized_download(link: str, is_video: bool) -> Optional[str]:
         if api_path and os.path.exists(api_path):
             return api_path
     except Exception as e:
-        await _log_error(f"API-1 download for {link}", e)
+        LOGGER.error(f"[YouTube] API-1 download for {link}: {e}")
 
     return None
 
@@ -466,7 +440,7 @@ async def _fast_search(query: str, fetch_all: bool = False):
                 return None
             html_text = await r.text()
     except Exception as e:
-        await _log_error(f"fast_search HTTP fetch for {query!r}", e)
+        LOGGER.error(f"[YouTube] fast_search HTTP fetch for {query!r}: {e}")
         return None
 
     results: list = []
@@ -532,7 +506,7 @@ async def _fast_search(query: str, fetch_all: bool = False):
                                         "url": f"https://www.youtube.com/watch?v={vid_id}",
                                     })
     except Exception as e:
-        await _log_error(f"fast_search JSON parse for {query!r}", e)
+        LOGGER.error(f"[YouTube] fast_search JSON parse for {query!r}: {e}")
 
     # Regex fallback
     if not results:
@@ -628,7 +602,7 @@ class YouTubeAPI:
                 if attempt < SEARCH_RETRIES - 1:
                     await asyncio.sleep(0.5)
 
-        await _log_error(f"details() failed for {link}", last_err)
+        LOGGER.error(f"[YouTube] details() failed for {link}: {last_err}")
         raise Exception(f"❌ Failed to fetch track details: {last_err}")
 
     async def title(self, link: str, videoid: Union[bool, str] = None) -> str:
@@ -693,7 +667,7 @@ class YouTubeAPI:
                 if attempt < SEARCH_RETRIES - 1:
                     await asyncio.sleep(0.5)
 
-        await _log_error(f"track() failed for {link}", last_err)
+        LOGGER.error(f"[YouTube] track() failed for {link}: {last_err}")
         raise Exception(f"❌ Could not process track: {last_err}")
 
     # ── slider ────────────────────────────────────────────────────────────────
@@ -749,7 +723,7 @@ class YouTubeAPI:
                 if attempt < SEARCH_RETRIES - 1:
                     await asyncio.sleep(0.5)
 
-        await _log_error(f"slider() failed for {link}", last_err)
+        LOGGER.error(f"[YouTube] slider() failed for {link}: {last_err}")
         raise Exception(f"❌ Failed to load search options: {last_err}")
 
     # ── video (live stream URL) ────────────────────────────────────────────────
@@ -764,22 +738,19 @@ class YouTubeAPI:
             return 0, "Unsafe URL"
         if "&" in link:
             link = link.split("&")[0]
-        proc = await asyncio.create_subprocess_exec(
-            "yt-dlp", "--cookies", cookie_txt_file(),
-            "-g", "-f", "best[height<=?720][width<=?1280]", link,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=PROCESS_TIMEOUT)
-        except asyncio.TimeoutError as e:
-            proc.kill()
-            await _log_error(f"video() yt-dlp timeout for {link}", e)
-            return 0, "Timeout: video extraction took too long"
+            vid = extract_video_id(link)
+            # Use API-1 to get a direct streamable URL
+            path = await _api1_download(link, is_video=True)
+            if path and os.path.exists(path):
+                return 1, path
+            # Fallback: try constructing a direct YouTube embed URL
+            if vid:
+                return 1, f"https://www.youtube.com/watch?v={vid}"
+            return 0, "Could not retrieve video stream URL"
         except Exception as e:
-            await _log_error(f"video() yt-dlp error for {link}", e)
+            LOGGER.error(f"[YouTube] video() error for {link}: {e}")
             return 0, str(e)
-        return (1, stdout.decode().split("\n")[0]) if stdout else (0, stderr.decode())
 
     # ── playlist ──────────────────────────────────────────────────────────────
 
@@ -793,34 +764,45 @@ class YouTubeAPI:
             return []
         if "&" in link:
             link = link.split("&")[0]
-        proc = await asyncio.create_subprocess_exec(
-            "yt-dlp", "-i", "--get-id", "--flat-playlist",
-            "--cookies", cookie_txt_file(),
-            "--playlist-end", str(limit),
-            "--skip-download", link,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
         try:
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=PROCESS_TIMEOUT)
+            # Extract playlist ID and scrape video IDs via YouTube's browse API
+            playlist_id = None
+            if "list=" in link:
+                playlist_id = link.split("list=")[-1].split("&")[0]
+            if not playlist_id:
+                LOGGER.error(f"[YouTube] playlist() could not extract playlist ID from {link}")
+                return []
+            session = await get_http_session()
+            url = f"https://www.youtube.com/playlist?list={playlist_id}"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                              "Chrome/120.0 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                if r.status != 200:
+                    LOGGER.error(f"[YouTube] playlist() HTTP {r.status} for {link}")
+                    return []
+                html_text = await r.text()
+            # Extract video IDs from the playlist page
+            video_ids = list(dict.fromkeys(
+                re.findall(r'"videoId":"([a-zA-Z0-9_-]{11})"', html_text)
+            ))
+            if not video_ids:
+                LOGGER.error(f"[YouTube] playlist() no video IDs found for {link}")
+                return []
+            return video_ids[:limit]
         except asyncio.TimeoutError as e:
-            proc.kill()
-            await _log_error(f"playlist() timeout for {link}", e)
+            LOGGER.error(f"[YouTube] playlist() timeout for {link}: {e}")
             return []
         except Exception as e:
-            await _log_error(f"playlist() error for {link}", e)
-            return []
-        try:
-            out = stdout.decode("utf-8") if stdout else ""
-            return [x for x in out.split("\n") if x]
-        except Exception as e:
-            await _log_error(f"playlist() decode error for {link}", e)
+            LOGGER.error(f"[YouTube] playlist() error for {link}: {e}")
             return []
 
     # ── formats ───────────────────────────────────────────────────────────────
 
     async def formats(self, link: str, videoid: Union[bool, str] = None):
-        import yt_dlp
+        """Return available formats via API-1 (yt-dlp removed)."""
         if not link:
             return [], ""
         link = str(link)
@@ -830,25 +812,30 @@ class YouTubeAPI:
             return [], link
         if "&" in link:
             link = link.split("&")[0]
+        # yt-dlp has been removed; return a standard set of formats via API
         try:
-            ydl_opts = {"quiet": True, "cookiefile": cookie_txt_file()}
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                formats_available = []
-                r = ydl.extract_info(link, download=False)
-                for fmt in r.get("formats", []):
-                    try:
-                        if "dash" in str(fmt.get("format", "")).lower():
-                            continue
-                        formats_available.append({
-                            "format": fmt["format"], "filesize": fmt["filesize"],
-                            "format_id": fmt["format_id"], "ext": fmt["ext"],
-                            "format_note": fmt["format_note"], "yturl": link,
-                        })
-                    except Exception:
-                        continue
+            vid = extract_video_id(link)
+            formats_available = [
+                {
+                    "format": "best audio",
+                    "filesize": None,
+                    "format_id": "bestaudio",
+                    "ext": "m4a",
+                    "format_note": "Best Audio (API)",
+                    "yturl": link,
+                },
+                {
+                    "format": "best video",
+                    "filesize": None,
+                    "format_id": "bestvideo",
+                    "ext": "mp4",
+                    "format_note": "Best Video (API)",
+                    "yturl": link,
+                },
+            ]
             return formats_available, link
         except Exception as e:
-            await _log_error(f"formats() for {link}", e)
+            LOGGER.error(f"[YouTube] formats() for {link}: {e}")
             return [], link
 
     # ── download (main entry point) ───────────────────────────────────────────
@@ -897,9 +884,9 @@ class YouTubeAPI:
                 LOGGER.info(f"[Download] Success › {path}")
                 return path if song_mode else (path, True)
         except asyncio.TimeoutError as e:
-            await _log_error(f"Download timeout for {link}", e)
+            LOGGER.error(f"[YouTube] Download timeout for {link}: {e}")
         except Exception as e:
-            await _log_error(f"Download failed for {link}", e)
+            LOGGER.error(f"[YouTube] Download failed for {link}: {e}")
 
         LOGGER.error(f"[Download] All methods failed for {link}")
         return _fail()

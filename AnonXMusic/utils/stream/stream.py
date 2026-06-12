@@ -465,6 +465,13 @@ async def stream(
         thumbnail    = result["thumb"]
         status       = True if video else None
         try:
+            await mystic.edit_text(
+                _["play_dl_status"].format(title[:50]),
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            pass
+        try:
             file_path, direct = await YouTube.download(
                 vidid, mystic, videoid=True, video=status
             )
@@ -478,7 +485,7 @@ async def stream(
             direct    = False
         if not file_path:
             return await mystic.edit_text(
-                _["play_dl_no_audio"],
+                _["play_dl_api_failed"].format(title[:50]),
                 disable_web_page_preview=True,
             )
         if direct and not os.path.isfile(file_path):

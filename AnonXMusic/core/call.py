@@ -20,12 +20,36 @@ from pytgcalls.types import Update
 from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
 from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
 from pytgcalls.types.stream import StreamAudioEnded
+from pyrogram.errors import FloodWait
 
 import config
 from AnonXMusic import LOGGER, YouTube, app
 from AnonXMusic.utils.error_logger import error_logger
 
 _LOG = LOGGER(__name__)
+
+_RETRYABLE_TG_ERRORS = [
+    "SERVER_TIMEOUT", "CONNECTION_DEVICE_MODEL_INVALID",
+    "AUTH_KEY_UNREGISTERED", "NETWORK_MIGRATE",
+]
+
+
+def _is_frozen(exc: Exception) -> bool:
+    msg = str(exc).upper()
+    return "FROZEN_METHOD_INVALID" in msg or "METHOD_INVALID" in msg
+
+
+def _is_retryable_call_error(exc: Exception) -> bool:
+    msg = str(exc)
+    return any(tag in msg for tag in _RETRYABLE_TG_ERRORS)
+
+
+async def _notify_owner(text: str) -> None:
+    try:
+        owner_id = int(config.OWNER_ID)
+        await app.send_message(owner_id, text, disable_web_page_preview=True)
+    except Exception as e:
+        _LOG.warning(f"[notify_owner] failed: {e}")
 
 
 # ── Safe TG call with retry ───────────────────────────────────────────────────
@@ -97,6 +121,7 @@ from AnonXMusic.misc import db
 from AnonXMusic.utils.database import (
     add_active_chat,
     add_active_video_chat,
+    get_assistant_number,
     get_lang,
     get_loop,
     group_assistant,
@@ -292,22 +317,73 @@ class Call(PyTgCalls):
             if video
             else AudioPiped(link, HighQualityAudio())
         )
-        try:
-            await assistant.join_group_call(chat_id, stream, stream_type=StreamType().pulse_stream)
-        except NoActiveGroupCall:
-            raise AssistantErr(_["call_8"])
-        except AlreadyJoinedError:
+
+        max_retries = 5
+        retry_delay = 3.0
+        last_exc = None
+
+        for attempt in range(1, max_retries + 1):
             try:
-                await assistant.change_stream(chat_id, stream)
-            except Exception:
-                raise AssistantErr(_["call_9"])
-        except TelegramServerError:
-            raise AssistantErr(_["call_10"])
-        except Exception as e:
-            err_str = str(e).lower()
-            if "groupcall" in err_str and ("invalid" in err_str or "id" in err_str):
-                raise AssistantErr(_["call_11"])
-            raise
+                await assistant.join_group_call(chat_id, stream, stream_type=StreamType().pulse_stream)
+                last_exc = None
+                break
+
+            except FloodWait as fw:
+                wait = fw.value + 1
+                assis_num = await get_assistant_number(chat_id) or "?"
+                _LOG.warning(
+                    f"[join_call] FloodWait {wait}s for chat {chat_id} "
+                    f"assistant #{assis_num} attempt {attempt}/{max_retries}"
+                )
+                await _notify_owner(
+                    _["owner_warn_flood"].format(chat_id, wait) +
+                    f"\n<b>Assistant #:</b> <code>{assis_num}</code>"
+                )
+                await asyncio.sleep(wait)
+                last_exc = fw
+                if attempt == max_retries:
+                    raise AssistantErr(_["call_flood_wait"].format(wait))
+
+            except Exception as e:
+                if _is_frozen(e):
+                    assis_num = await get_assistant_number(chat_id) or "?"
+                    _LOG.error(
+                        f"[join_call] Frozen account detected — Assistant #{assis_num} "
+                        f"for chat {chat_id}: {e}"
+                    )
+                    await _notify_owner(
+                        _["owner_warn_frozen"].format(chat_id, str(e)) +
+                        f"\n<b>Assistant #:</b> <code>{assis_num}</code>"
+                    )
+                    raise AssistantErr(_["call_frozen"])
+
+                elif _is_retryable_call_error(e):
+                    if attempt < max_retries:
+                        wait = retry_delay * attempt
+                        _LOG.warning(
+                            f"[join_call] Retryable error for {chat_id} "
+                            f"attempt {attempt}/{max_retries}: {e}. Retry in {wait}s…"
+                        )
+                        await asyncio.sleep(wait)
+                        last_exc = e
+                        continue
+                    raise AssistantErr(_["call_retryable_failed"].format(str(e)[:80]))
+
+                elif isinstance(e, NoActiveGroupCall):
+                    raise AssistantErr(_["call_8"])
+                elif isinstance(e, AlreadyJoinedError):
+                    try:
+                        await assistant.change_stream(chat_id, stream)
+                    except Exception:
+                        raise AssistantErr(_["call_9"])
+                    break
+                elif isinstance(e, TelegramServerError):
+                    raise AssistantErr(_["call_10"])
+                else:
+                    err_str = str(e).lower()
+                    if "groupcall" in err_str and ("invalid" in err_str or "id" in err_str):
+                        raise AssistantErr(_["call_11"])
+                    raise
 
         await add_active_chat(chat_id)
         await music_on(chat_id)

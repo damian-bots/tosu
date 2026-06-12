@@ -397,3 +397,44 @@ async def markup_timer():
 
 asyncio.create_task(markup_timer())
 
+
+@app.on_callback_query(filters.regex(r"^unban_assistant "))
+async def unban_assistant_callback(client, callback_query):
+    """Handle the 'Unban Assistant' inline button pressed by group admins."""
+    try:
+        data = callback_query.data.split(" ", 1)[1]
+        chat_id_str, user_id_str = data.split("|")
+        chat_id  = int(chat_id_str)
+        user_id  = int(user_id_str)
+    except Exception:
+        return await callback_query.answer("❌ Invalid data.", show_alert=True)
+
+    # Only group admins may use this
+    try:
+        member = await client.get_chat_member(chat_id, callback_query.from_user.id)
+        from pyrogram.enums import ChatMemberStatus as CMS
+        if member.status not in (CMS.ADMINISTRATOR, CMS.OWNER):
+            return await callback_query.answer(
+                "⚠️ Only group admins can use this button.", show_alert=True
+            )
+    except Exception:
+        return await callback_query.answer("❌ Could not verify your admin status.", show_alert=True)
+
+    try:
+        await client.unban_chat_member(chat_id, user_id)
+        await callback_query.answer("✅ Assistant unbanned! Please try playing again.", show_alert=True)
+        try:
+            await callback_query.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+    except Exception as e:
+        err = str(e).lower()
+        if "admin" in err or "right" in err or "forbidden" in err or "not enough" in err:
+            await callback_query.answer(
+                "⚠️ I don't have ban rights in this group.\nPlease unban the assistant manually.",
+                show_alert=True,
+            )
+        else:
+            await callback_query.answer(
+                f"❌ Failed to unban: {str(e)[:100]}", show_alert=True
+            )
