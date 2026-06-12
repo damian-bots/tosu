@@ -23,7 +23,7 @@ call_3 : "Failed To Invite {0} Assistant To Your Chat.\n\nReason : <code>{1}</co
 call_4 : "<emoji id='5453918011272470772'>🏎</emoji> Please Wait...\n\nInviting {0} Assistant To Your Chat..."
 call_5 : "<emoji id='5231174882678564635'>📹</emoji> {0} Assistant Joined Successfully.\n\nTrying To Start Stream..."
 call_6 : "<b>Unable to switch the stream.</b>\n\nThe next track could not be loaded. Use /skip to try again or /stop to end the session."
-call_7 : "Hold on — downloading the next track in queue..."
+call_7 : "<emoji id='5891156376473836675'>🪐</emoji>Hold on\n\ndownloading the next track in queue..."
 call_8 : "<b>No Active Video Chat Found</b>\n\nThere is no ongoing video chat in this group.\n\nStart a video chat and try again — or tap the button below to launch one."
 call_9 : "<b>Reconnecting to Voice Chat</b>\n\nThe assistant appears to already be in this call. Attempting to resume the stream...\n\nIf playback does not start, send <code>/reboot</code> and try again."
 call_10 : "<b>Telegram Server Issue</b>\n\nTelegram is experiencing temporary difficulties on their end. Please try again in a moment or restart the group's video chat."
@@ -88,7 +88,7 @@ admin_38 : "» Added 1 Upvote."
 admin_39 : "» Removed 1 Upvote."
 admin_40 : "Upvoted."
 
-start_1 : "<emoji id='5454390891466726015'>👋</emoji><b>{0} is ready</b>\n<b>Uptime:</b> <code>{1}</code>\n\nA music player with support for YouTube, Spotify, Apple Music, SoundCloud, Deezer, JioSaavn and more."
+start_1 : "<emoji id='5454390891466726015'>👋</emoji><b>{0} is ready</b>\n\n<b>Uptime:</b> <code>{1}</code>\n\nA music player with support for YouTube, Spotify, Apple Music, SoundCloud, Deezer, JioSaavn and more."
 start_2 : "<emoji id='5454390891466726015'>👋</emoji> Hello, {0}.\n\n{1} is a music bot for Telegram — stream from YouTube, Spotify, Apple Music, SoundCloud, Deezer, JioSaavn and more, right inside any group voice chat.\n\nUse /help to explore all commands."
 start_3 : "<emoji id='5454390891466726015'>👋</emoji> Hello {0}, thanks for adding {1} to {2}.\n\n{3} is all set and ready to play music in this group."
 start_4 : "<b>Supergroup Required</b>\n\nThis bot only works in Supergroups.\n\nTo convert your group, enable visible chat history once from the group settings, then add the bot again."
@@ -130,7 +130,7 @@ cplay_5 : "Only Channels Are Supported."
 cplay_6 : "» You Need To Be The <b>Owner</b> Of The Channel {0} To Connect It With This Group.\n<b>Channel's Owner :</b> @{1}\n\nAlternatively You Can Link Your Group To That Channel And Then Try Connecting With <code>/channelplay linked</code>"
 cplay_7 : "» Channel Play Disabled."
 
-play_1 : "Searching..."
+play_1 : "<emoji id='5890925363067886150'>✨</emoji> Searching..."
 play_2 : "<b>➻ Channel Play Mode</b>\n\nProcessing, Please Wait...\n\n<b>Linked Channel :</b> {0}"
 play_3 : "» Failed To Process Query."
 play_4 : "<b>Admins Only</b>\n\nOnly admins of this chat can play music.\n\nChange this setting via /playmode"
@@ -176,7 +176,7 @@ ping_2 : "<b>Pong</b>  <code>{0} ms</code>\n\n<b>{1}</b>\n\nUptime        {2}\nM
 queue_1 : "Fetching queue, please wait..."
 queue_2 : "The queue is empty. Play something to get started."
 queue_3 : "<u>» Queued Tracks :</u> <a href={0}>View Full List</a>"
-queue_4 : "Added to Queue — #{0}\n\n<b>Title :</b> {1}\n<b>Duration :</b> {2}\n<b>Requested By :</b> {3}"
+queue_4 : "<b>Added to Queue — #{0}</b>\n\n<b>Title :</b> {1}\n<b>Duration :</b> {2}\n<b>Requested By :</b> {3}"
 queue_5 : "Only one track is in the queue. Add more to see the full list."
 queue_6 : "<b>Duration :</b> Unknown\n\nTap the button below to view the full queue."
 queue_7 : "\nTap the button below to view the full queue."
@@ -326,15 +326,15 @@ gban_12 : "<b>Globally Banned Users :</b>\n\n"
 yt_video_disabled : "<emoji id='5454225457916420314'>😖</emoji> <b>Video Playback Temporarily Unavailable</b>\n\nDue to high server load, we've temporarily disabled YouTube video downloads (/vplay).\n\nAudio playback via /play is working as usual. 🎵\n\nWe apologise for the inconvenience and hope to restore this feature very soon.\nThank you for your patience and understanding! 🙏"
 
 # ── Group call error messages ─────────────────────────────────────────────────
-call_flood_wait : "⏳ <b>Flood Wait</b>\n\nTelegram is asking the assistant to wait <b>{0} seconds</b> before joining the call.\n\nPlease try again in a moment."
+call_flood_wait : "<emoji id='5850317551090800862'>⏰</emoji> <b>Flood Wait</b>\n\nTelegram is asking the assistant to wait <b>{0} seconds</b> before joining the call.\n\nPlease try again in a moment."
 
-call_frozen : "🧊 <b>Assistant Account Restricted</b>\n\nOne of the assistant accounts appears to have been temporarily frozen by Telegram (FROZEN_METHOD_INVALID).\n\nThe bot owner has been notified. Please try again later or use /reboot."
+call_frozen : "<emoji id='5431895003821513760'>❄️</emoji> <b>Assistant Account Restricted</b>\n\nOne of the assistant accounts appears to have been temporarily frozen by Telegram (FROZEN_METHOD_INVALID).\n\nThe bot owner has been notified. Please try again later or use /reboot."
 
 call_retryable_failed : "⚠️ <b>Group Call Error</b>\n\nCould not join the voice chat after multiple retries.\n\nError: <code>{0}</code>\n\nPlease end and restart the voice chat, then try again."
 
-call_channels_too_much : "📛 <b>Too Many Channels</b>\n\nThe assistant has joined too many channels/groups (CHANNELS_TOO_MUCH).\n\nPlease contact the bot owner to resolve this."
+call_channels_too_much : "<emoji id='5456517450034060547'>📛</emoji> <b>Too Many Channels</b>\n\nThe assistant has joined too many channels/groups (CHANNELS_TOO_MUCH).\n\nPlease contact the bot owner to resolve this."
 
 # ── Owner warning messages (sent to OWNER_ID) ────────────────────────────────
-owner_warn_flood : "⚠️ <b>FloodWait Alert</b>\n\n<b>Chat:</b> <code>{0}</code>\n<b>Wait time:</b> <b>{1}s</b>\n\nThe assistant hit a FloodWait while joining a group call. Bot will resume automatically after the wait."
+owner_warn_flood : "<emoji id='5454225457916420314'>😖</emoji> <b>FloodWait Alert</b>\n\n<b>Chat:</b> <code>{0}</code>\n<b>Wait time:</b> <b>{1}s</b>\n\nThe assistant hit a FloodWait while joining a group call. Bot will resume automatically after the wait."
 
-owner_warn_frozen : "🚨 <b>FROZEN ACCOUNT DETECTED</b>\n\n<b>Chat:</b> <code>{0}</code>\n<b>Error:</b> <pre>{1}</pre>\n\nAn assistant account has been frozen by Telegram (FROZEN_METHOD_INVALID). Please check your session strings and consider replacing the frozen account."
+owner_warn_frozen : "<emoji id='5431895003821513760'>❄️</emoji> <b>FROZEN ACCOUNT DETECTED</b>\n\n<b>Chat:</b> <code>{0}</code>\n<b>Error:</b> <pre>{1}</pre>\n\nAn assistant account has been frozen by Telegram (FROZEN_METHOD_INVALID). Please check your session strings and consider replacing the frozen account."
