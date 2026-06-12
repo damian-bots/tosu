@@ -25,15 +25,11 @@ ERROR_LOG_ID     = int(getenv("ERROR_LOG_ID", "-1003640483183"))
 
 # ── API-1 (Arc / deadline-tech) ───────────────────────────────────────────────
 # Get credentials from deadlinetech.site or @smaugxd
-API_URL = getenv("API_URL", "https://api.arcmusic.fun")
+API_URL = getenv("API_URL", "https://test.arcmusic.fun")
 API_KEY = getenv("API_KEY")       # Required
 
 API_URL2 = getenv("API_URL2", "https://api.onegrab.fun")
 API_KEY2 = getenv("API_KEY2")
-
-# ── API-2 (OneGrab) ───────────────────────────────────────────────────────────
-API_URL2 = getenv("API_URL2", "https://api.onegrab.fun")
-API_KEY2 = getenv("API_KEY2")     # Required
 
 # ── Owner ─────────────────────────────────────────────────────────────────────
 OWNER_ID = 603536072
