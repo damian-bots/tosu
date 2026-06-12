@@ -72,7 +72,7 @@ _ENCRYPTED_PLATFORMS = {"spotify"}
 
 CHUNK = 1024 * 1024
 DOWNLOAD_TIMEOUT = 120
-DOWNLOADS_DIR = "downloads"
+DOWNLOADS_DIR = os.path.join(os.getcwd(), "downloads")
 
 _session: Optional[aiohttp.ClientSession] = None
 _session_lock = asyncio.Lock()
@@ -215,12 +215,47 @@ async def _download_spotify_track(cdn_url: str, hex_key: str, track_id: str) -> 
                 pass
 
 async def _download_direct(cdn_url: str, track_id: str, ext: str = "mp3") -> Optional[str]:
-    """Direct (unencrypted) CDN download — used for all non-Spotify platforms."""
+    """Direct (unencrypted) CDN download — used for all non-Spotify platforms.
+    HLS/M3U8 streams are handled via yt-dlp with ffmpeg downloader."""
     os.makedirs(DOWNLOADS_DIR, exist_ok=True)
     safe_id = os.path.basename(track_id) if track_id else "track"
     out_path = os.path.join(DOWNLOADS_DIR, f"{safe_id}.{ext}")
     if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
         return out_path
+
+    # Detect HLS/M3U8 streams — use yt-dlp with ffmpeg downloader
+    is_hls = (
+        "m3u8" in cdn_url.lower()
+        or ".m3u" in cdn_url.lower()
+        or "master.m3u" in cdn_url.lower()
+        or cdn_url.endswith(".m3u8")
+    )
+    if is_hls:
+        LOGGER.info(f"HLS stream detected — using yt-dlp+ffmpeg for {cdn_url[:80]}...")
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "yt-dlp",
+                "--downloader", "ffmpeg",
+                "--hls-use-mpegts",
+                "-x", "--audio-format", ext,
+                "--no-playlist",
+                "-o", out_path,
+                cdn_url,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=DOWNLOAD_TIMEOUT)
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                return out_path
+            LOGGER.error(f"yt-dlp HLS download failed: {stderr.decode()[:200] if stderr else 'unknown'}")
+            return None
+        except asyncio.TimeoutError:
+            LOGGER.error(f"yt-dlp HLS download timed out for {cdn_url[:80]}")
+            return None
+        except Exception as e:
+            LOGGER.error(f"yt-dlp HLS download error: {e}")
+            return None
+
     ok = await _stream_to_file(cdn_url, out_path)
     return out_path if ok else None
 
@@ -312,13 +347,17 @@ class ApiPlatform:
         """
         return await self._get("/api/track", {"url": url})
 
-    async def search(self, query: str, limit: int = 5) -> Optional[dict]:
+    async def search(self, query: str, limit: int = 5, platform: str = "spotify") -> Optional[dict]:
         """
         Search the platform for *query*.
-        Maps to GET /api/search?query=<query>&limit=<limit>
+        Maps to GET /api/search?query=<query>&limit=<limit>&platform=<platform>
+        platform defaults to "spotify" (matching the API endpoint behaviour).
         Returns the raw PlatformTracks dict from the API.
         """
-        return await self._get("/api/search", {"query": query, "limit": str(limit)})
+        params: dict = {"query": query, "limit": str(limit)}
+        if platform:
+            params["platform"] = platform
+        return await self._get("/api/search", params)
 
     async def track(self, url: str) -> Optional[tuple[dict, str]]:
         """
@@ -412,14 +451,22 @@ class ApiPlatform:
         Each dict mirrors Go's MusicTrack:
           { title, id, url, thumbnail, duration (int secs), channel, views, platform }
 
-        Callers (stream.py playlist handler) should use track["url"] directly
-        for API-2 platforms and fall back to YouTube search using track["title"]
-        only when track["url"] is empty.
+        For Spotify (and other API-2 platforms) every track from /api/get_url already
+        carries full metadata (title, duration, thumbnail, url, platform).
+        These tracks are tagged _ready=True so stream.py knows to download them
+        directly via ApiPlatform.download(url) without any YouTube search.
+
+        Callers should use track["url"] directly for API-2 platforms and fall back
+        to YouTube search using track["title"] only when track["url"] is empty.
         """
         data = await self.get_info(url)
         if not data:
             return None
         tracks = self._extract_music_tracks(data)
+        # Tag each track so stream.py knows it's fully resolved and has a CDN-ready URL
+        for t in tracks:
+            if t.get("url") and t.get("platform"):
+                t["_ready"] = True
         return tracks, url
 
     async def album(self, url: str) -> Optional[tuple[list[dict], str]]:

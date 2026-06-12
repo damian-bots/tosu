@@ -1,3 +1,4 @@
+import logging
 import random
 import string
 from urllib.parse import unquote
@@ -27,6 +28,8 @@ from AnonXMusic.utils.inline import (
 from AnonXMusic.utils.logger import play_logs
 from AnonXMusic.utils.stream.stream import stream
 from config import BANNED_USERS, lyrical
+
+LOGGER = logging.getLogger(__name__)
 
 @app.on_message(
     filters.command(
@@ -124,7 +127,12 @@ async def play_commnd(
                     return await mystic.edit_text(
                         _["play_7"].format(f"{' | '.join(formats)}")
                     )
-            except:
+            except Exception as exc:
+                import traceback as _tb
+                LOGGER.error(
+                    f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                    + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                )
                 return await mystic.edit_text(
                     _["play_7"].format(f"{' | '.join(formats)}")
                 )
@@ -172,7 +180,12 @@ async def play_commnd(
                         config.PLAYLIST_FETCH_LIMIT,
                         message.from_user.id,
                     )
-                except:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_dl_failed"].format("YouTube (Playlist)"))
                 streamtype = "playlist"
                 plist_type = "yt"
@@ -185,7 +198,12 @@ async def play_commnd(
             else:
                 try:
                     details, track_id = await YouTube.track(url)
-                except:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_dl_failed"].format("YouTube"))
                 streamtype = "youtube"
                 img = details["thumb"]
@@ -213,7 +231,12 @@ async def play_commnd(
             if "track" in url:
                 try:
                     details, track_id = await Spotify.track(url)
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_3"])
                 try:
                     sp_file = await Spotify.download(url)
@@ -222,37 +245,110 @@ async def play_commnd(
                         streamtype = "spotify"
                     else:
                         streamtype = "youtube"
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     streamtype = "youtube"
                 img = details.get("thumb") or config.SPOTIFY_PLAYLIST_IMG_URL
                 cap = _["play_10"].format(details["title"], details["duration_min"])
             elif "playlist" in url:
+                await mystic.edit_text(
+                    "🎵 <b>Fetching Spotify playlist…</b>\n"
+                    "<i>Usually takes 2-3 seconds via API-2</i>"
+                )
                 try:
                     details, plist_id = await Spotify.playlist(url)
-                except Exception:
-                    return await mystic.edit_text(_["play_3"])
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
+                    return await mystic.edit_text(
+                        "❌ <b>Failed to fetch Spotify playlist.</b>\n\n"
+                        "The playlist may be private, empty, or the API is temporarily unavailable.\n"
+                        "Please try again."
+                    )
+                if not details:
+                    return await mystic.edit_text(
+                        "❌ <b>Spotify playlist is empty or unavailable.</b>\n\n"
+                        "Make sure the playlist is public and try again."
+                    )
+                total_sp = len(details) if isinstance(details, list) else 0
                 streamtype = "playlist"
                 plist_type = "spplay"
                 img = config.SPOTIFY_PLAYLIST_IMG_URL
-                cap = _["play_11"].format(app.mention, message.from_user.mention)
+                cap = (
+                    f"🎵 <b>Spotify Playlist</b>\n"
+                    f"📋 <b>{total_sp} songs</b> found\n\n"
+                    + _["play_11"].format(app.mention, message.from_user.mention)
+                )
             elif "album" in url:
+                await mystic.edit_text(
+                    "💿 <b>Fetching Spotify album…</b>\n"
+                    "<i>Usually takes 2-3 seconds via API-2</i>"
+                )
                 try:
                     details, plist_id = await Spotify.album(url)
-                except:
-                    return await mystic.edit_text(_["play_3"])
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
+                    return await mystic.edit_text(
+                        "❌ <b>Failed to fetch Spotify album.</b>\n\n"
+                        "The album may be unavailable or the API is temporarily down.\n"
+                        "Please try again."
+                    )
+                if not details:
+                    return await mystic.edit_text(
+                        "❌ <b>Spotify album is empty or unavailable.</b>\n\n"
+                        "Please try again."
+                    )
+                total_sp = len(details) if isinstance(details, list) else 0
                 streamtype = "playlist"
                 plist_type = "spalbum"
                 img = config.SPOTIFY_ALBUM_IMG_URL
-                cap = _["play_11"].format(app.mention, message.from_user.mention)
+                cap = (
+                    f"💿 <b>Spotify Album</b>\n"
+                    f"📋 <b>{total_sp} tracks</b> found\n\n"
+                    + _["play_11"].format(app.mention, message.from_user.mention)
+                )
             elif "artist" in url:
+                await mystic.edit_text(
+                    "🎤 <b>Fetching Spotify artist top tracks…</b>\n"
+                    "<i>Usually takes 2-3 seconds via API-2</i>"
+                )
                 try:
                     details, plist_id = await Spotify.artist(url)
-                except:
-                    return await mystic.edit_text(_["play_3"])
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
+                    return await mystic.edit_text(
+                        "❌ <b>Failed to fetch Spotify artist tracks.</b>\n\n"
+                        "Please try again."
+                    )
+                if not details:
+                    return await mystic.edit_text(
+                        "❌ <b>No tracks found for this Spotify artist.</b>\n\n"
+                        "Please try again."
+                    )
+                total_sp = len(details) if isinstance(details, list) else 0
                 streamtype = "playlist"
                 plist_type = "spartist"
                 img = config.SPOTIFY_ARTIST_IMG_URL
-                cap = _["play_11"].format(message.from_user.first_name)
+                cap = (
+                    f"🎤 <b>Spotify Artist</b>\n"
+                    f"📋 <b>{total_sp} top tracks</b> found\n\n"
+                    + _["play_11"].format(message.from_user.first_name)
+                )
             else:
                 return await mystic.edit_text(_["play_15"])
 
@@ -264,27 +360,54 @@ async def play_commnd(
                     "❌ <b>Apple Music requires API_URL2 & API_KEY2.</b>\n\nPlease configure them in your environment."
                 )
             if "playlist" in url:
+                await mystic.edit_text("🎵 Fetching Apple Music playlist...")
                 try:
                     details, plist_id = await Apple.playlist(url)
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_3"])
+                total_ap = len(details) if isinstance(details, list) else 0
                 streamtype = "playlist"
                 plist_type = "appleplay"
                 img = config.APPLE_IMG_URL
-                cap = _["play_11"].format(app.mention, message.from_user.mention)
+                cap = (
+                    f"🎵 <b>Apple Music Playlist</b>\n"
+                    f"📋 <b>{total_ap} songs</b> found\n\n"
+                    + _["play_11"].format(app.mention, message.from_user.mention)
+                )
             elif "album" in url:
+                await mystic.edit_text("💿 Fetching Apple Music album...")
                 try:
                     details, plist_id = await Apple.album(url)
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_3"])
+                total_ap = len(details) if isinstance(details, list) else 0
                 streamtype = "playlist"
                 plist_type = "applealbum"
                 img = config.APPLE_IMG_URL
-                cap = _["play_11"].format(app.mention, message.from_user.mention)
+                cap = (
+                    f"💿 <b>Apple Music Album</b>\n"
+                    f"📋 <b>{total_ap} tracks</b> found\n\n"
+                    + _["play_11"].format(app.mention, message.from_user.mention)
+                )
             else:
                 try:
                     details, track_id = await Apple.track(url)
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_3"])
                 streamtype = "apple"
                 img = details.get("thumb") or config.APPLE_IMG_URL
@@ -294,7 +417,12 @@ async def play_commnd(
                     if not file_path:
                         return await mystic.edit_text(_["play_dl_failed"].format("Apple Music"))
                     details["file_path"] = file_path
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_dl_failed"].format("Apple Music"))
 
         elif await Resso.valid(url):
@@ -313,7 +441,12 @@ async def play_commnd(
                     details, track_id = result
                 else:
                     return await mystic.edit_text(_["play_3"])
-            except Exception:
+            except Exception as exc:
+                import traceback as _tb
+                LOGGER.error(
+                    f"play.py error in {type(exc).__name__}: {exc}:\n"
+                    + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                )
                 return await mystic.edit_text(_["play_3"])
             streamtype = "soundcloud_api"
             img = details.get("thumb") or config.SOUNCLOUD_IMG_URL
@@ -323,7 +456,12 @@ async def play_commnd(
                 if not file_path:
                     return await mystic.edit_text(_["play_dl_failed"].format("SoundCloud"))
                 details["file_path"] = file_path
-            except Exception:
+            except Exception as exc:
+                import traceback as _tb
+                LOGGER.error(
+                    f"play.py error in {type(exc).__name__}: {exc}:\n"
+                    + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                )
                 return await mystic.edit_text(_["play_dl_failed"].format("SoundCloud"))
 
         elif await Deezer.valid(url):
@@ -334,7 +472,12 @@ async def play_commnd(
             if "track" in url:
                 try:
                     details, track_id = await Deezer.track(url)
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_3"])
                 streamtype = "deezer"
                 img = details.get("thumb") or config.DEEZER_IMG_URL
@@ -344,17 +487,33 @@ async def play_commnd(
                     if not file_path:
                         return await mystic.edit_text(_["play_dl_failed"].format("Deezer"))
                     details["file_path"] = file_path
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_dl_failed"].format("Deezer"))
             else:
+                await mystic.edit_text("🎵 Fetching Deezer playlist...")
                 try:
                     details, plist_id = await Deezer.playlist(url)
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_3"])
+                total_dz = len(details) if isinstance(details, list) else 0
                 streamtype = "playlist"
                 plist_type = "deezerplay"
                 img = config.DEEZER_IMG_URL
-                cap = _["play_11"].format(app.mention, message.from_user.mention)
+                cap = (
+                    f"🎵 <b>Deezer Playlist</b>\n"
+                    f"📋 <b>{total_dz} songs</b> found\n\n"
+                    + _["play_11"].format(app.mention, message.from_user.mention)
+                )
 
         elif await Gaana.valid(url):
             if not config.ENABLE_GAANA:
@@ -366,8 +525,14 @@ async def play_commnd(
                 if result:
                     details, track_id = result
                 else:
+                    LOGGER.error(f"Gaana.track returned None for {url}")
                     return await mystic.edit_text(_["play_3"])
-            except Exception:
+            except Exception as exc:
+                import traceback as _tb
+                LOGGER.error(
+                    f"Gaana track fetch failed for {url}:\n"
+                    + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                )
                 return await mystic.edit_text(_["play_3"])
             streamtype = "gaana"
             img = details.get("thumb") or config.GAANA_IMG_URL
@@ -375,9 +540,15 @@ async def play_commnd(
             try:
                 file_path = await Gaana.download(url)
                 if not file_path:
+                    LOGGER.error(f"Gaana.download returned None for {url}")
                     return await mystic.edit_text(_["play_dl_failed"].format("Gaana"))
                 details["file_path"] = file_path
-            except Exception:
+            except Exception as exc:
+                import traceback as _tb
+                LOGGER.error(
+                    f"Gaana download failed for {url}:\n"
+                    + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                )
                 return await mystic.edit_text(_["play_dl_failed"].format("Gaana"))
 
         elif await Tidal.valid(url):
@@ -388,7 +559,12 @@ async def play_commnd(
             if "track" in url:
                 try:
                     details, track_id = await Tidal.track(url)
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_3"])
                 streamtype = "tidal"
                 img = details.get("thumb") or config.TIDAL_IMG_URL
@@ -398,17 +574,33 @@ async def play_commnd(
                     if not file_path:
                         return await mystic.edit_text(_["play_dl_failed"].format("Tidal"))
                     details["file_path"] = file_path
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_dl_failed"].format("Tidal"))
             else:
+                await mystic.edit_text("🎵 Fetching Tidal playlist/album...")
                 try:
                     details, plist_id = await Tidal.album(url) if "album" in url else await Tidal.playlist(url)
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_3"])
+                total_tidal = len(details) if isinstance(details, list) else 0
                 streamtype = "playlist"
                 plist_type = "tidalplay"
                 img = config.TIDAL_IMG_URL
-                cap = _["play_11"].format(app.mention, message.from_user.mention)
+                cap = (
+                    f"🎵 <b>Tidal {'Album' if 'album' in url else 'Playlist'}</b>\n"
+                    f"📋 <b>{total_tidal} tracks</b> found\n\n"
+                    + _["play_11"].format(app.mention, message.from_user.mention)
+                )
 
         elif await JioSaavn.valid(url):
             if not config.ENABLE_JIOSAAVN:
@@ -418,7 +610,12 @@ async def play_commnd(
             if "song" in url:
                 try:
                     details, track_id = await JioSaavn.track(url)
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"JioSaavn track fetch failed for {url}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_3"])
                 streamtype = "jiosaavn"
                 img = details.get("thumb") or config.JIOSAAVN_IMG_URL
@@ -426,19 +623,36 @@ async def play_commnd(
                 try:
                     file_path = await JioSaavn.download(url)
                     if not file_path:
+                        LOGGER.error(f"JioSaavn.download returned None for {url}")
                         return await mystic.edit_text(_["play_dl_failed"].format("JioSaavn"))
                     details["file_path"] = file_path
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"JioSaavn download failed for {url}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_dl_failed"].format("JioSaavn"))
             else:
+                await mystic.edit_text("🎵 Fetching JioSaavn playlist...")
                 try:
                     details, plist_id = await JioSaavn.playlist(url)
-                except Exception:
+                except Exception as exc:
+                    import traceback as _tb
+                    LOGGER.error(
+                        f"play.py error in {type(exc).__name__}: {exc}:\n"
+                        + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                    )
                     return await mystic.edit_text(_["play_3"])
+                total_js = len(details) if isinstance(details, list) else 0
                 streamtype = "playlist"
                 plist_type = "jiosaavnplay"
                 img = config.JIOSAAVN_IMG_URL
-                cap = _["play_11"].format(app.mention, message.from_user.mention)
+                cap = (
+                    f"🎵 <b>JioSaavn Playlist</b>\n"
+                    f"📋 <b>{total_js} songs</b> found\n\n"
+                    + _["play_11"].format(app.mention, message.from_user.mention)
+                )
 
         elif await Twitch.valid(url):
             if not config.ENABLE_TWITCH:
@@ -451,7 +665,12 @@ async def play_commnd(
                     details, track_id = result
                 else:
                     return await mystic.edit_text(_["play_3"])
-            except Exception:
+            except Exception as exc:
+                import traceback as _tb
+                LOGGER.error(
+                    f"play.py error in {type(exc).__name__}: {exc}:\n"
+                    + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                )
                 return await mystic.edit_text(_["play_3"])
             file_path = await Twitch.download(url, video=bool(video))
             if not file_path:
@@ -472,7 +691,12 @@ async def play_commnd(
                     details, track_id = result
                 else:
                     return await mystic.edit_text(_["play_3"])
-            except Exception:
+            except Exception as exc:
+                import traceback as _tb
+                LOGGER.error(
+                    f"play.py error in {type(exc).__name__}: {exc}:\n"
+                    + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                )
                 return await mystic.edit_text(_["play_3"])
             file_path = await Kick.download(url, video=bool(video))
             if not file_path:
@@ -493,7 +717,12 @@ async def play_commnd(
                     details, track_id = result
                 else:
                     return await mystic.edit_text(_["play_3"])
-            except Exception:
+            except Exception as exc:
+                import traceback as _tb
+                LOGGER.error(
+                    f"play.py error in {type(exc).__name__}: {exc}:\n"
+                    + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                )
                 return await mystic.edit_text(_["play_3"])
             file_path = await MXPlayer.download(url, video=bool(video))
             if not file_path:
@@ -538,7 +767,12 @@ async def play_commnd(
             query = query.replace("-v", "")
         try:
             details, track_id = await YouTube.track(query)
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             return await mystic.edit_text(_["play_dl_failed"].format("YouTube"))
         streamtype = "youtube"
 
@@ -564,6 +798,18 @@ async def play_commnd(
                         _["play_13"],
                         reply_markup=InlineKeyboardMarkup(buttons),
                     )
+        # Update the processing message to show what's being downloaded
+        if streamtype == "youtube" and not plist_type and isinstance(details, dict):
+            _title = (details.get("title") or "track").title()
+            try:
+                await mystic.edit_text(_["play_dl_status"].format(_title))
+            except Exception as exc:
+                import traceback as _tb
+                LOGGER.error(
+                    f"play.py error in {type(exc).__name__}: {exc}:\n"
+                    + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+                )
+                pass
         try:
             await stream(
                 _,
@@ -582,7 +828,7 @@ async def play_commnd(
             ex_type = type(e).__name__
             err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
             return await mystic.edit_text(err)
-        await mystic.delete()
+        # mystic was edited into the Now Playing card inside stream(), do not delete it.
         return await play_logs(message, streamtype=streamtype)
     else:
         if plist_type:
@@ -651,24 +897,44 @@ async def play_music(client, CallbackQuery, _):
     if CallbackQuery.from_user.id != int(user_id):
         try:
             return await CallbackQuery.answer(_["playcb_1"], show_alert=True)
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             return
     try:
         chat_id, channel = await get_channeplayCB(_, cplay, CallbackQuery)
-    except:
+    except Exception as exc:
+        import traceback as _tb
+        LOGGER.error(
+            f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+            + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+        )
         return
     user_name = CallbackQuery.from_user.first_name
     try:
         await CallbackQuery.message.delete()
         await CallbackQuery.answer()
-    except:
+    except Exception as exc:
+        import traceback as _tb
+        LOGGER.error(
+            f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+            + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+        )
         pass
     mystic = await CallbackQuery.message.reply_text(
         _["play_2"].format(channel) if channel else _["play_1"]
     )
     try:
         details, track_id = await YouTube.track(vidid, True)
-    except:
+    except Exception as exc:
+        import traceback as _tb
+        LOGGER.error(
+            f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+            + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+        )
         return await mystic.edit_text(_["play_dl_failed"].format("YouTube"))
     duration_sec = time_to_seconds(details["duration_min"])
     if duration_sec > 0:
@@ -708,7 +974,7 @@ async def play_music(client, CallbackQuery, _):
         ex_type = type(e).__name__
         err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
         return await mystic.edit_text(err)
-    return await mystic.delete()
+    # mystic was edited into the Now Playing card inside stream(); do not delete it.
 
 @app.on_callback_query(filters.regex("AnonymousAdmin") & ~BANNED_USERS)
 async def anonymous_check(client, CallbackQuery):
@@ -717,7 +983,12 @@ async def anonymous_check(client, CallbackQuery):
             "» ʀᴇᴠᴇʀᴛ ʙᴀᴄᴋ ᴛᴏ ᴜsᴇʀ ᴀᴄᴄᴏᴜɴᴛ :\n\nᴏᴘᴇɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ sᴇᴛᴛɪɴɢs.\n-> ᴀᴅᴍɪɴɪsᴛʀᴀᴛᴏʀs\n-> ᴄʟɪᴄᴋ ᴏɴ ʏᴏᴜʀ ɴᴀᴍᴇ\n-> ᴜɴᴄʜᴇᴄᴋ ᴀɴᴏɴʏᴍᴏᴜs ᴀᴅᴍɪɴ ᴘᴇʀᴍɪssɪᴏɴs.",
             show_alert=True,
         )
-    except:
+    except Exception as exc:
+        import traceback as _tb
+        LOGGER.error(
+            f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+            + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+        )
         pass
 
 @app.on_callback_query(filters.regex("AnonyPlaylists") & ~BANNED_USERS)
@@ -736,17 +1007,32 @@ async def play_playlists_command(client, CallbackQuery, _):
     if CallbackQuery.from_user.id != int(user_id):
         try:
             return await CallbackQuery.answer(_["playcb_1"], show_alert=True)
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             return
     try:
         chat_id, channel = await get_channeplayCB(_, cplay, CallbackQuery)
-    except:
+    except Exception as exc:
+        import traceback as _tb
+        LOGGER.error(
+            f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+            + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+        )
         return
     user_name = CallbackQuery.from_user.first_name
     await CallbackQuery.message.delete()
     try:
         await CallbackQuery.answer()
-    except:
+    except Exception as exc:
+        import traceback as _tb
+        LOGGER.error(
+            f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+            + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+        )
         pass
     mystic = await CallbackQuery.message.reply_text(
         _["play_2"].format(channel) if channel else _["play_1"]
@@ -764,22 +1050,42 @@ async def play_playlists_command(client, CallbackQuery, _):
                 CallbackQuery.from_user.id,
                 True,
             )
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             return await mystic.edit_text(_["play_3"])
     elif ptype == "spplay":
         try:
             result, spotify_id = await Spotify.playlist(videoid)
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             return await mystic.edit_text(_["play_3"])
     elif ptype == "spalbum":
         try:
             result, spotify_id = await Spotify.album(videoid)
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             return await mystic.edit_text(_["play_3"])
     elif ptype == "spartist":
         try:
             result, spotify_id = await Spotify.artist(videoid)
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             return await mystic.edit_text(_["play_3"])
     elif ptype in ("apple", "appleplay", "applealbum"):
         try:
@@ -787,7 +1093,12 @@ async def play_playlists_command(client, CallbackQuery, _):
                 result, _ = await Apple.album(videoid)
             else:
                 result, _ = await Apple.playlist(videoid, True)
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             return await mystic.edit_text(_["play_3"])
         spotify = True
     elif ptype in ("deezerplay", "deezeralbum"):
@@ -798,7 +1109,12 @@ async def play_playlists_command(client, CallbackQuery, _):
                 result, _ = await Deezer.album(videoid)
             else:
                 result, _ = await Deezer.playlist(videoid)
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             return await mystic.edit_text(_["play_3"])
         spotify = True
     elif ptype in ("tidalplay", "tidalalbum"):
@@ -809,7 +1125,12 @@ async def play_playlists_command(client, CallbackQuery, _):
                 result, _ = await Tidal.album(videoid)
             else:
                 result, _ = await Tidal.playlist(videoid)
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             return await mystic.edit_text(_["play_3"])
         spotify = True
     elif ptype == "jiosaavnplay":
@@ -817,7 +1138,12 @@ async def play_playlists_command(client, CallbackQuery, _):
             return await mystic.edit_text("❌ JioSaavn requires API_URL2 & API_KEY2.")
         try:
             result, _ = await JioSaavn.playlist(videoid)
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             return await mystic.edit_text(_["play_3"])
         spotify = True
     else:
@@ -840,7 +1166,7 @@ async def play_playlists_command(client, CallbackQuery, _):
         ex_type = type(e).__name__
         err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
         return await mystic.edit_text(err)
-    return await mystic.delete()
+    # mystic was edited into the Now Playing card inside stream(); do not delete it.
 
 @app.on_callback_query(filters.regex("slider") & ~BANNED_USERS)
 @languageCB
@@ -858,7 +1184,12 @@ async def slider_queries(client, CallbackQuery, _):
     if CallbackQuery.from_user.id != int(user_id):
         try:
             return await CallbackQuery.answer(_["playcb_1"], show_alert=True)
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             return
     what = str(what)
     rtype = int(rtype)
@@ -869,7 +1200,12 @@ async def slider_queries(client, CallbackQuery, _):
             query_type = int(rtype + 1)
         try:
             await CallbackQuery.answer(_["playcb_2"])
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             pass
         title, duration_min, thumbnail, vidid = await YouTube.slider(query, query_type)
         buttons = slider_markup(_, vidid, user_id, query, query_type, cplay, fplay)
@@ -890,7 +1226,12 @@ async def slider_queries(client, CallbackQuery, _):
             query_type = int(rtype - 1)
         try:
             await CallbackQuery.answer(_["playcb_2"])
-        except:
+        except Exception as exc:
+            import traceback as _tb
+            LOGGER.error(
+                f"play.py unhandled error {type(exc).__name__}: {exc}:\n"
+                + "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            )
             pass
         title, duration_min, thumbnail, vidid = await YouTube.slider(query, query_type)
         buttons = slider_markup(_, vidid, user_id, query, query_type, cplay, fplay)

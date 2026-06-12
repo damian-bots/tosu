@@ -1,341 +1,332 @@
-import time
+# AnonXMusic · plugins/misc/broadcast.py  (v1.0.4)
+# Stable broadcast with:
+#   - asyncio.Semaphore concurrency limit
+#   - Batch processing with state persistence (resume after restart)
+#   - Full error logging per delivery failure
+#   - Auto-resume prompt to owner on bot restart
+#   - cancel / resume / clearfailed commands
+
 import asyncio
 import json
 import os
 import re
+import time
+import traceback
 from functools import partial
 
 from pyrogram import filters
-from pyrogram.enums import ChatMembersFilter, ParseMode
+from pyrogram.enums import ParseMode
 from pyrogram.errors import (
-    FloodWait, 
-    RPCError, 
-    InputUserDeactivated, 
-    UserIsBlocked, 
-    PeerIdInvalid
+    FloodWait,
+    InputUserDeactivated,
+    PeerIdInvalid,
+    RPCError,
+    UserIsBlocked,
 )
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+import config
 from AnonXMusic import app
+from AnonXMusic.logging import LOGGER
 from AnonXMusic.misc import SUDOERS
 from AnonXMusic.utils.database import (
-    get_active_chats,
-    get_authuser_names,
-    get_client,
     get_served_chats,
     get_served_users,
 )
-from AnonXMusic.utils.decorators.language import language
-from AnonXMusic.utils.formatters import alpha_to_int
-from config import adminlist
-import config
-from AnonXMusic.logging import LOGGER
+
 LOG = LOGGER(__name__)
 
-# Stability Settings
-SEMAPHORE = asyncio.Semaphore(5) 
+# ── Config ────────────────────────────────────────────────────────────────────
+SEMAPHORE  = asyncio.Semaphore(5)
 BATCH_SIZE = 50
 
-# Save Files
-STATE_FILE = "broadcast_state.json"      
-TARGETS_FILE = "broadcast_targets.json"  
-FAILED_FILE = "broadcast_failed.json"   
+STATE_FILE   = "broadcast_state.json"
+TARGETS_FILE = "broadcast_targets.json"
+FAILED_FILE  = "broadcast_failed.json"
 
-BROADCAST_LOCK = asyncio.Lock()
-CANCEL_BROADCAST = False 
-FAILED_IDS = set()
+BROADCAST_LOCK    = asyncio.Lock()
+CANCEL_BROADCAST  = False
+FAILED_IDS: set   = set()
 
-def get_readable_time(seconds: int) -> str:
-    count = 0
-    time_list = []
-    time_suffix_list = ["s", "m", "h", "days"]
-    while count < 4:
-        count += 1
-        remainder, result = divmod(seconds, 60) if count < 3 else divmod(seconds, 24)
-        if seconds == 0 and remainder == 0: break
-        time_list.append(int(result))
-        seconds = int(remainder)
-    for x in range(len(time_list)):
-        time_list[x] = str(time_list[x]) + time_suffix_list[x]
-    if len(time_list) == 4: time_list.pop()
-    time_list.reverse()
-    return ":".join(time_list)
 
-async def write_json_async(filename, data):
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _readable_time(seconds: int) -> str:
+    parts = []
+    for unit, div in [("d", 86400), ("h", 3600), ("m", 60), ("s", 1)]:
+        val, seconds = divmod(seconds, div)
+        if val:
+            parts.append(f"{val}{unit}")
+    return ":".join(parts) if parts else "0s"
+
+
+async def _write_json(filename, data):
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, partial(json_dump_sync, filename, data))
+    await loop.run_in_executor(None, partial(_json_dump, filename, data))
 
-def json_dump_sync(filename, data):
+
+def _json_dump(filename, data):
     with open(filename, "w") as f:
         json.dump(data, f, indent=4)
 
-def load_json_sync(filename):
+
+def _load_json(filename):
     if os.path.exists(filename):
         try:
-            with open(filename, "r") as f:
+            with open(filename) as f:
                 return json.load(f)
-        except: return None
+        except Exception:
+            pass
     return None
 
-def load_failed_list():
+
+def _load_failed():
     global FAILED_IDS
-    data = load_json_sync(FAILED_FILE)
-    if data: FAILED_IDS = set(data)
+    data = _load_json(FAILED_FILE)
+    if data:
+        FAILED_IDS = set(data)
 
-async def save_failed_list():
-    await write_json_async(FAILED_FILE, list(FAILED_IDS))
 
-load_failed_list()
+async def _save_failed():
+    await _write_json(FAILED_FILE, list(FAILED_IDS))
 
-async def run_broadcast(state, targets, status_message=None):
+
+_load_failed()
+
+
+# ── Core broadcast runner ─────────────────────────────────────────────────────
+
+async def run_broadcast(state: dict, targets: list, status_msg=None):
     global CANCEL_BROADCAST
-    
+
     if BROADCAST_LOCK.locked():
         return
 
     async with BROADCAST_LOCK:
         CANCEL_BROADCAST = False
-        
-        mode = state["mode"]
-        is_reply = state.get("is_reply", True)
-        content_chat_id = state.get("content_chat")
-        content_msg_id = state.get("content_msg")
-        text_payload = state.get("text_payload", "")
-        
-        initiator_id = state.get("initiator")
-        start_index = state.get("current_index", 0)
-        start_time = state.get("start_time", time.time())
-        last_update_time = time.time()
-        
-        total_users_count = state.get("total_users", 0)
-        total_chats_count = state.get("total_chats", 0)
-        
+
+        mode            = state["mode"]
+        is_reply        = state.get("is_reply", True)
+        content_chat    = state.get("content_chat")
+        content_msg_id  = state.get("content_msg")
+        text_payload    = state.get("text_payload", "")
+        initiator_id    = state.get("initiator")
+        start_idx       = state.get("current_index", 0)
+        start_time      = state.get("start_time", time.time())
+        last_update     = time.time()
+
         stats = state.get("stats", {"sent_users": 0, "sent_chats": 0, "failed": 0, "skipped": 0})
-        sent_users = stats.get("sent_users", 0)
-        sent_chats = stats.get("sent_chats", 0)
-        failed_count = stats["failed"]
+        sent_users    = stats["sent_users"]
+        sent_chats    = stats["sent_chats"]
+        failed_count  = stats["failed"]
         skipped_count = stats["skipped"]
 
         content = None
         if is_reply:
             try:
-                content = await app.get_messages(content_chat_id, content_msg_id)
-                if not content: raise ValueError
-            except:
-                if status_message: await status_message.edit_text("❌ <b>Error:</b> The original message to be broadcasted was deleted.")
+                content = await app.get_messages(content_chat, content_msg_id)
+                if not content:
+                    raise ValueError("Message deleted")
+            except Exception as e:
+                LOG.error(f"[Broadcast] Cannot fetch source message: {e}")
+                if status_msg:
+                    await status_msg.edit_text("❌ <b>Source message was deleted.</b>")
                 return
 
-        remaining_targets = targets[start_index:]
+        remaining     = targets[start_idx:]
         total_targets = len(targets)
 
-        async def deliver(chat_id):
+        async def _send_to(chat_id):
             nonlocal sent_users, sent_chats, failed_count, skipped_count
-            
+
             if chat_id in FAILED_IDS:
                 skipped_count += 1
                 return
 
-            try:
-                async with SEMAPHORE:
-                    if is_reply:
-                        if mode == "forward":
-                            await content.forward(chat_id)
-                        elif content.text:
-                            kwargs = {"reply_markup": content.reply_markup, "parse_mode": ParseMode.HTML}
-                            try:
-                                await app.send_message(chat_id, content.text.html, disable_web_page_preview=False, **kwargs)
-                            except TypeError:
-                                from pyrogram.types import LinkPreviewOptions
-                                await app.send_message(chat_id, content.text.html, link_preview_options=LinkPreviewOptions(is_disabled=False), **kwargs)
-                        else:
-                            await content.copy(chat_id, reply_markup=content.reply_markup)
-                    else:
+            async def _do_send():
+                if is_reply:
+                    if mode == "forward":
+                        await content.forward(chat_id)
+                    elif content.text:
                         try:
-                            await app.send_message(chat_id, text_payload, disable_web_page_preview=False, parse_mode=ParseMode.HTML)
+                            await app.send_message(
+                                chat_id, content.text.html,
+                                reply_markup=content.reply_markup,
+                                parse_mode=ParseMode.HTML,
+                                disable_web_page_preview=False,
+                            )
                         except TypeError:
                             from pyrogram.types import LinkPreviewOptions
-                            await app.send_message(chat_id, text_payload, link_preview_options=LinkPreviewOptions(is_disabled=False), parse_mode=ParseMode.HTML)
-                    
+                            await app.send_message(
+                                chat_id, content.text.html,
+                                reply_markup=content.reply_markup,
+                                parse_mode=ParseMode.HTML,
+                                link_preview_options=LinkPreviewOptions(is_disabled=False),
+                            )
+                    else:
+                        await content.copy(chat_id, reply_markup=content.reply_markup)
+                else:
+                    try:
+                        await app.send_message(
+                            chat_id, text_payload,
+                            parse_mode=ParseMode.HTML,
+                            disable_web_page_preview=False,
+                        )
+                    except TypeError:
+                        from pyrogram.types import LinkPreviewOptions
+                        await app.send_message(
+                            chat_id, text_payload,
+                            parse_mode=ParseMode.HTML,
+                            link_preview_options=LinkPreviewOptions(is_disabled=False),
+                        )
+
+            try:
+                async with SEMAPHORE:
+                    await _do_send()
                     if str(chat_id).startswith("-"):
                         sent_chats += 1
                     else:
                         sent_users += 1
-                        
                     await asyncio.sleep(0.1)
 
-            except FloodWait as e:
-                if e.value > 60:
+            except FloodWait as fw:
+                if fw.value > 60:
+                    LOG.warning(f"[Broadcast] FloodWait {fw.value}s too long for {chat_id}, skipping")
                     failed_count += 1
                 else:
-                    LOG.warning(f"FloodWait {e.value}s in chat {chat_id}")
-                    await asyncio.sleep(e.value)
+                    LOG.warning(f"[Broadcast] FloodWait {fw.value}s for {chat_id}, waiting…")
+                    await asyncio.sleep(fw.value)
                     try:
-                        if is_reply:
-                            if mode == "forward":
-                                await content.forward(chat_id)
-                            elif content.text:
-                                kwargs = {"reply_markup": content.reply_markup, "parse_mode": ParseMode.HTML}
-                                try:
-                                    await app.send_message(chat_id, content.text.html, disable_web_page_preview=False, **kwargs)
-                                except TypeError:
-                                    from pyrogram.types import LinkPreviewOptions
-                                    await app.send_message(chat_id, content.text.html, link_preview_options=LinkPreviewOptions(is_disabled=False), **kwargs)
+                        async with SEMAPHORE:
+                            await _do_send()
+                            if str(chat_id).startswith("-"):
+                                sent_chats += 1
                             else:
-                                await content.copy(chat_id, reply_markup=content.reply_markup)
-                        else:
-                            try:
-                                await app.send_message(chat_id, text_payload, disable_web_page_preview=False, parse_mode=ParseMode.HTML)
-                            except TypeError:
-                                from pyrogram.types import LinkPreviewOptions
-                                await app.send_message(chat_id, text_payload, link_preview_options=LinkPreviewOptions(is_disabled=False), parse_mode=ParseMode.HTML)
-                                
-                        if str(chat_id).startswith("-"):
-                            sent_chats += 1
-                        else:
-                            sent_users += 1
-                    except:
+                                sent_users += 1
+                    except Exception:
                         failed_count += 1
 
             except (InputUserDeactivated, UserIsBlocked, PeerIdInvalid):
-                FAILED_IDS.add(chat_id) 
+                FAILED_IDS.add(chat_id)
                 failed_count += 1
-            except Exception:
+
+            except Exception as e:
+                LOG.error(f"[Broadcast] Delivery error to {chat_id}: {e}\n"
+                          + traceback.format_exc())
                 failed_count += 1
 
         i = 0
-        while i < len(remaining_targets):
+        while i < len(remaining):
             if CANCEL_BROADCAST:
-                if status_message: await status_message.edit_text("🛑 <b>Broadcast has been successfully cancelled.</b>")
-                if os.path.exists(STATE_FILE): os.remove(STATE_FILE)
+                LOG.info("[Broadcast] Cancelled by user")
+                if status_msg:
+                    await status_msg.edit_text("🛑 <b>Broadcast cancelled.</b>")
+                _cleanup_files()
                 return
 
-            batch = remaining_targets[i : i + BATCH_SIZE]
-            
-            tasks = [deliver(chat_id) for chat_id in batch]
-            await asyncio.gather(*tasks)
+            batch = remaining[i: i + BATCH_SIZE]
+            await asyncio.gather(*[_send_to(cid) for cid in batch])
 
-            current_real_index = start_index + i + len(batch)
-            
-            new_state = {
-                "mode": mode,
-                "is_reply": is_reply,
-                "content_chat": content_chat_id,
-                "content_msg": content_msg_id,
-                "text_payload": text_payload,
-                "initiator": initiator_id,
-                "start_time": start_time,
-                "current_index": current_real_index,
-                "total_users": total_users_count,
-                "total_chats": total_chats_count,
-                "stats": {
-                    "sent_users": sent_users,
-                    "sent_chats": sent_chats,
-                    "failed": failed_count,
-                    "skipped": skipped_count
-                }
-            }
+            real_index = start_idx + i + len(batch)
+            new_state  = {**state, "current_index": real_index, "stats": {
+                "sent_users": sent_users, "sent_chats": sent_chats,
+                "failed": failed_count, "skipped": skipped_count,
+            }}
+            await _write_json(STATE_FILE, new_state)
+            await _save_failed()
 
-            await write_json_async(STATE_FILE, new_state)
-            await save_failed_list()
-
-            if status_message and (time.time() - last_update_time) > 15:
-                elapsed = time.time() - start_time
-                if elapsed == 0: elapsed = 1
+            # Progress update every 15 s
+            if status_msg and (time.time() - last_update) > 15:
+                elapsed = max(time.time() - start_time, 1)
                 total_done = sent_users + sent_chats + failed_count + skipped_count
-                speed = (total_done - stats.get("skipped", 0)) / elapsed 
-                if speed <= 0: speed = 0.1
-                
-                remaining = total_targets - current_real_index
-                eta = get_readable_time(remaining / speed)
-
+                speed      = max(total_done / elapsed, 0.1)
+                eta        = _readable_time(int((total_targets - real_index) / speed))
                 try:
-                    await status_message.edit_text(
-                        "📢 <b>Broadcast in Progress...</b>\n\n"
-                        f"👤 <b>Users Sent:</b> <code>{sent_users}</code>\n"
-                        f"👥 <b>Chats Sent:</b> <code>{sent_chats}</code>\n"
+                    await status_msg.edit_text(
+                        "📢 <b>Broadcast in Progress…</b>\n\n"
+                        f"👤 <b>Users:</b> <code>{sent_users}</code>\n"
+                        f"👥 <b>Chats:</b> <code>{sent_chats}</code>\n"
                         f"❌ <b>Failed:</b> <code>{failed_count}</code>\n"
                         f"⏩ <b>Skipped:</b> <code>{skipped_count}</code>\n\n"
-                        f"📊 <b>Progress:</b> <code>{current_real_index} / {total_targets}</code>\n"
+                        f"📊 <b>Progress:</b> <code>{real_index}/{total_targets}</code>\n"
                         f"⚡ <b>Speed:</b> <code>{round(speed, 1)} msg/s</code>\n"
                         f"⏳ <b>ETA:</b> <code>{eta}</code>"
                     )
-                    last_update_time = time.time()
+                    last_update = time.time()
                 except FloodWait as fw:
                     await asyncio.sleep(fw.value)
-                except: 
+                except Exception:
                     pass
-            
+
             i += BATCH_SIZE
             await asyncio.sleep(1.5)
 
-        if os.path.exists(STATE_FILE): os.remove(STATE_FILE)
-        if os.path.exists(TARGETS_FILE): os.remove(TARGETS_FILE)
-        
-        final_text = (
-            "✅ <b>Broadcast Completed Successfully!</b> 🎉\n\n"
-            "<b>Delivery Statistics:</b>\n"
-            f"  👤 <b>Sent to Users:</b> <code>{sent_users}</code>\n"
-            f"  👥 <b>Sent to Chats:</b> <code>{sent_chats}</code>\n"
-            f"  ❌ <b>Failed:</b> <code>{failed_count}</code>\n"
-            f"  🚫 <b>Skipped (Blocked/Invalid):</b> <code>{skipped_count}</code>\n\n"
-            "<b>Target Information:</b>\n"
-            f"  🎯 <b>Total Processed:</b> <code>{total_targets}</code>\n"
-            f"  📝 <b>Database Users:</b> <code>{total_users_count}</code> | <b>Chats:</b> <code>{total_chats_count}</code>\n\n"
-            f"⏱ <b>Total Time Taken:</b> <code>{get_readable_time(time.time() - start_time)}</code>"
-        )
-        
-        LOG.info(f"Broadcast finished. Users: {sent_users}, Chats: {sent_chats}, Failed: {failed_count}, Skipped: {skipped_count}")
+        _cleanup_files()
 
-        if status_message:
+        summary = (
+            "✅ <b>Broadcast Completed!</b>\n\n"
+            f"👤 <b>Users:</b> <code>{sent_users}</code>\n"
+            f"👥 <b>Chats:</b> <code>{sent_chats}</code>\n"
+            f"❌ <b>Failed:</b> <code>{failed_count}</code>\n"
+            f"🚫 <b>Skipped:</b> <code>{skipped_count}</code>\n"
+            f"🎯 <b>Total:</b> <code>{total_targets}</code>\n"
+            f"⏱ <b>Time:</b> <code>{_readable_time(int(time.time() - start_time))}</code>"
+        )
+        LOG.info(f"[Broadcast] Done. Users={sent_users}, Chats={sent_chats}, "
+                 f"Failed={failed_count}, Skipped={skipped_count}")
+
+        if status_msg:
             try:
-                await status_message.edit_text(final_text)
-            except:
+                await status_msg.edit_text(summary)
+            except Exception:
                 pass
-        elif initiator_id: 
-            try: await app.send_message(initiator_id, final_text)
-            except: pass
+        elif initiator_id:
+            try:
+                await app.send_message(initiator_id, summary)
+            except Exception:
+                pass
+
+
+def _cleanup_files():
+    for f in (STATE_FILE, TARGETS_FILE):
+        if os.path.exists(f):
+            os.remove(f)
+
+
+# ── Commands ──────────────────────────────────────────────────────────────────
 
 @app.on_message(filters.command("broadcast") & SUDOERS)
 async def broadcast_command(client, message: Message):
     if BROADCAST_LOCK.locked():
-        return await message.reply_text("⚠️ <b>A broadcast is currently already running!</b>")
+        return await message.reply_text("⚠️ <b>A broadcast is already running!</b>")
 
     if os.path.exists(STATE_FILE) and os.path.exists(TARGETS_FILE):
         if "-new" not in (message.text or "").lower():
             return await message.reply_text(
-                "⚠️ <b>Found an unfinished broadcast!</b>\n\n"
-                "Use <code>/resume_broadcast</code> to continue where it left off, or <code>/broadcast -new</code> to start a fresh one."
+                "⚠️ <b>Unfinished broadcast found!</b>\n\n"
+                "Use <code>/resume_broadcast</code> to continue or <code>/broadcast -new</code> for fresh."
             )
 
     query = (message.text or "").lower()
-    mode = "forward" if "-forward" in query else "copy"
+    mode  = "forward" if "-forward" in query else "copy"
 
-    original_text = message.text or message.caption or ""
-    broadcast_text = ""
-    
-    if original_text.startswith("/"):
-        parts = original_text.split(None, 1)
-        if len(parts) > 1:
-            broadcast_text = parts[1]
+    raw_text = message.text or message.caption or ""
+    parts    = raw_text.split(None, 1)
+    bc_text  = parts[1] if len(parts) > 1 else ""
+    for flag in ["-all", "-users", "-chats", "-forward", "-copy", "-new"]:
+        bc_text = re.sub(rf"(?i)\b{re.escape(flag)}\b", "", bc_text)
+    bc_text = bc_text.strip()
 
-    flags_to_remove = ["-all", "-users", "-chats", "-forward", "-copy", "-new"]
-    for flag in flags_to_remove:
-        broadcast_text = re.sub(rf'(?i)\b{flag}\b', '', broadcast_text)
-    
-    broadcast_text = broadcast_text.strip()
-
-    if not message.reply_to_message and not broadcast_text:
+    if not message.reply_to_message and not bc_text:
         return await message.reply_text(
-            "⚠️ <b>Please reply to a message OR provide text to broadcast.</b>\n\n"
-            "<b>Usage Example:</b> <code>/broadcast -all Hello everyone!</code>"
+            "⚠️ <b>Reply to a message OR provide text.</b>\n\n"
+            "<b>Example:</b> <code>/broadcast -all Hello everyone!</code>"
         )
 
-    msg = await message.reply_text("⏳ <b>Fetching users and chats from the database...</b>")
-    LOG.info(f"/broadcast triggered by user: {message.from_user.id}")
+    msg = await message.reply_text("⏳ <b>Fetching targets from database…</b>")
+    LOG.info(f"[Broadcast] Started by {message.from_user.id}")
 
-    users_list = []
-    chats_list = []
-    
+    users_list = chats_list = []
     if "-all" in query:
         users_list = await get_served_users()
         chats_list = await get_served_chats()
@@ -345,139 +336,145 @@ async def broadcast_command(client, message: Message):
         users_list = await get_served_users()
     else:
         return await msg.edit_text(
-            "⚠️ <b>Invalid Usage:</b>\n"
-            "Please specify a target: <code>/broadcast -all</code>, <code>/broadcast -users</code>, or <code>/broadcast -chats</code>."
+            "⚠️ Specify target: <code>-all</code>, <code>-users</code>, or <code>-chats</code>."
         )
 
-    raw_targets = []
     try:
-        for u in users_list:
-            raw_targets.append(u.get("user_id") if isinstance(u, dict) else u)
-        for c in chats_list:
-            raw_targets.append(c.get("chat_id") if isinstance(c, dict) else c)
+        raw_ids = [
+            (u.get("user_id") if isinstance(u, dict) else u) for u in users_list
+        ] + [
+            (c.get("chat_id") if isinstance(c, dict) else c) for c in chats_list
+        ]
     except Exception as e:
-        LOG.error(f"Error extracting IDs: {e}")
+        LOG.error(f"[Broadcast] ID extraction error: {e}")
         return await msg.edit_text(f"❌ <b>Error extracting IDs:</b> <code>{e}</code>")
 
-    targets = list(set(raw_targets))
-    
+    targets = list(set(raw_ids))
     if not targets:
-        return await msg.edit_text("❌ <b>No targets found in the database.</b>")
+        return await msg.edit_text("❌ <b>No targets found in database.</b>")
 
-    await write_json_async(TARGETS_FILE, targets)
-
+    await _write_json(TARGETS_FILE, targets)
     state = {
-        "mode": mode,
-        "is_reply": bool(message.reply_to_message),
-        "content_chat": message.reply_to_message.chat.id if message.reply_to_message else None,
-        "content_msg": message.reply_to_message.id if message.reply_to_message else None,
-        "text_payload": broadcast_text,
-        "initiator": message.from_user.id,
-        "start_time": time.time(),
+        "mode":          mode,
+        "is_reply":      bool(message.reply_to_message),
+        "content_chat":  message.reply_to_message.chat.id if message.reply_to_message else None,
+        "content_msg":   message.reply_to_message.id     if message.reply_to_message else None,
+        "text_payload":  bc_text,
+        "initiator":     message.from_user.id,
+        "start_time":    time.time(),
         "current_index": 0,
-        "total_users": len(users_list),
-        "total_chats": len(chats_list),
-        "stats": {"sent_users": 0, "sent_chats": 0, "failed": 0, "skipped": 0}
+        "total_users":   len(users_list),
+        "total_chats":   len(chats_list),
+        "stats":         {"sent_users": 0, "sent_chats": 0, "failed": 0, "skipped": 0},
     }
-    await write_json_async(STATE_FILE, state)
-
+    await _write_json(STATE_FILE, state)
     await run_broadcast(state, targets, msg)
+
 
 @app.on_message(filters.command("resume_broadcast") & SUDOERS)
 async def resume_broadcast(client, message: Message):
     if not (os.path.exists(STATE_FILE) and os.path.exists(TARGETS_FILE)):
-        return await message.reply_text("❌ <b>There is no active or paused broadcast to resume.</b>")
-    
-    msg = await message.reply_text("♻️ <b>Resuming the previous broadcast...</b>")
-    LOG.info(f"Broadcast resumed by user: {message.from_user.id}")
-    
-    state = load_json_sync(STATE_FILE)
-    targets = load_json_sync(TARGETS_FILE)
-    
+        return await message.reply_text("❌ <b>No paused broadcast found.</b>")
+    msg    = await message.reply_text("♻️ <b>Resuming broadcast…</b>")
+    state   = _load_json(STATE_FILE)
+    targets = _load_json(TARGETS_FILE)
     if not state or not targets:
-        return await msg.edit_text("❌ <b>Save files are corrupted. Please start a new broadcast.</b>")
-        
+        return await msg.edit_text("❌ <b>Save files corrupted. Start a new broadcast.</b>")
+    LOG.info(f"[Broadcast] Resumed by {message.from_user.id}")
     await run_broadcast(state, targets, msg)
+
 
 @app.on_message(filters.command("cancelbroadcast") & SUDOERS)
 async def cancel_broadcast_cmd(client, message: Message):
     global CANCEL_BROADCAST
     CANCEL_BROADCAST = True
-    LOG.info(f"Broadcast cancelled by user: {message.from_user.id}")
-    await message.reply_text("🛑 <b>Stopping the current broadcast immediately...</b>")
+    LOG.info(f"[Broadcast] Cancelled by {message.from_user.id}")
+    await message.reply_text("🛑 <b>Stopping broadcast…</b>")
+
 
 @app.on_message(filters.command("clearfailed") & SUDOERS)
-async def clear_failed(client, message: Message):
+async def clear_failed_cmd(client, message: Message):
     global FAILED_IDS
     FAILED_IDS.clear()
-    if os.path.exists(FAILED_FILE): os.remove(FAILED_FILE)
-    LOG.info(f"Failed cache cleared by user: {message.from_user.id}")
-    await message.reply_text("✅ <b>Successfully cleared the skipped/failed user cache.</b>")
+    if os.path.exists(FAILED_FILE):
+        os.remove(FAILED_FILE)
+    LOG.info(f"[Broadcast] Failed cache cleared by {message.from_user.id}")
+    await message.reply_text("✅ <b>Cleared failed/blocked cache.</b>")
 
-async def auto_resume_check():
-    await asyncio.sleep(5)
-    if os.path.exists(STATE_FILE) and os.path.exists(TARGETS_FILE):
-        try:
-            state = load_json_sync(STATE_FILE)
-            targets = load_json_sync(TARGETS_FILE)
-            total = len(targets)
-            current = state.get("current_index", 0)
-            
-            text = (
-                "⚠️ <b>Broadcast Interrupted!</b>\n\n"
-                f"📊 <b>Saved Progress:</b> <code>{current} / {total}</code>\n\n"
-                "Would you like to resume it now?"
-            )
-            buttons = InlineKeyboardMarkup([[
-                InlineKeyboardButton("✅ Resume", callback_data="resume_broadcast"),
-                InlineKeyboardButton("❌ Cancel", callback_data="cancel_broadcast")
-            ]])
-            
-            if SUDOERS:
-                owner_id = config.OWNER_ID
-                await app.send_message(owner_id, text, reply_markup=buttons)
-            else:
-                LOG.warning("Unfinished broadcast found, but no SUDOERS available to notify.")
-        except Exception as e: 
-            LOG.error(f"Failed to send auto-resume prompt: {e}")
 
-@app.on_callback_query(filters.regex(r"^(resume_broadcast|cancel_broadcast)$") & filters.user(config.OWNER_ID))
+# ── Callback buttons ──────────────────────────────────────────────────────────
+
+@app.on_callback_query(
+    filters.regex(r"^(resume_broadcast|cancel_broadcast)$")
+    & filters.user(config.OWNER_ID)
+)
 async def broadcast_callback(client, query: CallbackQuery):
     global CANCEL_BROADCAST
     if query.data == "cancel_broadcast":
         CANCEL_BROADCAST = True
-        if os.path.exists(STATE_FILE): os.remove(STATE_FILE)
-        if os.path.exists(TARGETS_FILE): os.remove(TARGETS_FILE)
-        await query.message.edit_text("🛑 <b>Broadcast Successfully Cancelled.</b>")
+        _cleanup_files()
+        await query.message.edit_text("🛑 <b>Broadcast Cancelled.</b>")
     else:
-        state = load_json_sync(STATE_FILE)
-        targets = load_json_sync(TARGETS_FILE)
+        state   = _load_json(STATE_FILE)
+        targets = _load_json(TARGETS_FILE)
         if state and targets:
-            await query.message.edit_text("♻️ <b>Resuming Broadcast...</b>")
+            await query.message.edit_text("♻️ <b>Resuming Broadcast…</b>")
             await run_broadcast(state, targets, query.message)
         else:
-            await query.message.edit_text("❌ <b>Broadcast data has expired or is invalid.</b>")
+            await query.message.edit_text("❌ <b>Broadcast data expired or invalid.</b>")
 
 
-async def auto_clean():
-    while not await asyncio.sleep(10):
+# ── Admin-list refresh loop ────────────────────────────────────────────────────
+# (Keep active admin list fresh every 10 s)
+
+from AnonXMusic.utils.database import get_active_chats, get_authuser_names
+from AnonXMusic.utils.formatters import alpha_to_int
+from config import adminlist
+
+
+async def _refresh_admin_list():
+    while True:
+        await asyncio.sleep(10)
         try:
-            served_chats = await get_active_chats()
-            for chat_id in served_chats:
+            from pyrogram.enums import ChatMembersFilter
+            for chat_id in await get_active_chats():
                 if chat_id not in adminlist:
                     adminlist[chat_id] = []
-                    async for user in app.get_chat_members(
-                        chat_id, filter=ChatMembersFilter.ADMINISTRATORS
-                    ):
-                        if user.privileges.can_manage_video_chats:
-                            adminlist[chat_id].append(user.user.id)
-                    authusers = await get_authuser_names(chat_id)
-                    for user in authusers:
-                        user_id = await alpha_to_int(user)
-                        adminlist[chat_id].append(user_id)
-        except:
-            continue
+                async for user in app.get_chat_members(chat_id, filter=ChatMembersFilter.ADMINISTRATORS):
+                    if user.privileges.can_manage_video_chats:
+                        adminlist[chat_id].append(user.user.id)
+                for user in await get_authuser_names(chat_id):
+                    adminlist[chat_id].append(await alpha_to_int(user))
+        except Exception:
+            pass
 
 
-asyncio.create_task(auto_clean())
-asyncio.create_task(auto_resume_check())
+# ── Auto-resume on startup ─────────────────────────────────────────────────────
+
+async def _auto_resume_check():
+    await asyncio.sleep(5)
+    if not (os.path.exists(STATE_FILE) and os.path.exists(TARGETS_FILE)):
+        return
+    try:
+        state   = _load_json(STATE_FILE)
+        targets = _load_json(TARGETS_FILE)
+        if not state or not targets:
+            return
+        total   = len(targets)
+        current = state.get("current_index", 0)
+        text = (
+            "⚠️ <b>Broadcast Interrupted!</b>\n\n"
+            f"📊 <b>Progress:</b> <code>{current}/{total}</code>\n\n"
+            "Resume it now?"
+        )
+        buttons = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Resume", callback_data="resume_broadcast"),
+            InlineKeyboardButton("❌ Cancel", callback_data="cancel_broadcast"),
+        ]])
+        await app.send_message(config.OWNER_ID, text, reply_markup=buttons)
+    except Exception as e:
+        LOG.error(f"[Broadcast] Auto-resume check failed: {e}")
+
+
+asyncio.create_task(_refresh_admin_list())
+asyncio.create_task(_auto_resume_check())

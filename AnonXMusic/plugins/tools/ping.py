@@ -7,25 +7,24 @@ from AnonXMusic import app
 from AnonXMusic.core.call import Anony
 from AnonXMusic.utils import bot_sys_stats
 from AnonXMusic.utils.decorators.language import language
-from AnonXMusic.utils.inline import supp_markup
-from config import BANNED_USERS, PING_IMG_URL
+from config import BANNED_USERS
 
 
 @app.on_message(filters.command(["ping", "alive"]) & ~BANNED_USERS)
 @language
 async def ping_com(client, message: Message, _):
     start = datetime.now()
-    response = await message.reply_photo(
-        photo=PING_IMG_URL,
-        caption=_["ping_1"].format(app.mention),
-    )
+    response = await message.reply_text("🏓 Pong!")
     pytgping = await Anony.ping()
     UP, CPU, RAM, DISK = await bot_sys_stats()
-    
-    # FIXED: Using total_seconds() to accurately capture delays over 1 second
     resp = round((datetime.now() - start).total_seconds() * 1000, 3)
-    
     await response.edit_text(
-        _["ping_2"].format(resp, app.mention, UP, RAM, CPU, DISK, pytgping),
-        reply_markup=supp_markup(_),
+        f"<b>🏓 Pong!</b>  <code>{resp} ms</code>\n\n"
+        f"<b>📊 System:</b>\n"
+        f"  • Uptime: <code>{UP}</code>\n"
+        f"  • CPU: <code>{CPU}</code>\n"
+        f"  • RAM: <code>{RAM}</code>\n"
+        f"  • Disk: <code>{DISK}</code>\n\n"
+        f"<b>📞 PyTgCalls:</b> <code>{pytgping} ms</code>",
+        disable_web_page_preview=True,
     )
