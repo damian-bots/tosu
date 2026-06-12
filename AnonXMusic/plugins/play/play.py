@@ -59,6 +59,9 @@ async def play_commnd(
     url,
     fplay,
 ):
+    if video and not config.ENABLE_YOUTUBE_VIDEO:
+        return await message.reply_text(_["yt_video_disabled"])
+
     mystic = await message.reply_text(
         _["play_2"].format(channel) if channel else _["play_1"]
     )

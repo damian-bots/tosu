@@ -155,7 +155,8 @@ play_22 : "Select the playback mode for this group : {0}"
 play_disabled : "<b>{0} is Currently Unavailable</b>\n\nThis platform has been disabled by the bot owner. Please try a different source or check back later."
 play_dl_failed : "<b>Failed to Download</b>\n\nWe couldn't download the track from {0}. This is usually a temporary issue.\n\nIf it persists, please contact support."
 play_dl_no_audio : "<b>No Audio Source Found</b>\n\nNo playable audio was found for this track. The source may be restricted, removed, or region-locked.\n\nTry searching for a different version or contact support if this continues."
-play_dl_status : "Downloading {0}..."
+play_dl_api_failed : "⚠️ <b>Download Failed — {0}</b>\n\nOur download servers couldn't retrieve this track after multiple attempts. This is usually a temporary issue on the source side.\n\nTry again in a moment, or search for a different version using /play."
+play_dl_status : "Downloading {0}…"
 
 raw_1 : "<b>Direct URL Detected</b>\n\nProcessing your link, please wait..."
 raw_2 : "<b>Invalid or Unplayable Link</b>\n\nThe provided URL could not be opened or is not a valid media link.\n\nPlease double-check the URL and try again."
@@ -320,3 +321,6 @@ gban_9 : "» Lifted Global Ban From {0}.\n\nUnbanned In {1} Chats."
 gban_10 : "» No One Is Globally Banned From The Bot."
 gban_11 : "» Fetching Gbanned Users List..."
 gban_12 : "<b>Globally Banned Users :</b>\n\n"
+
+# ── YouTube video-download toggle ────────────────────────────────────────────
+yt_video_disabled : "🚫 <b>Video Playback Temporarily Unavailable</b>\n\nDue to high server load, we've temporarily disabled YouTube video downloads (/vplay).\n\nAudio playback via /play is working as usual. 🎵\n\nWe apologise for the inconvenience and hope to restore this feature very soon.\nThank you for your patience and understanding! 🙏"

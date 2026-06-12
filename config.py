@@ -73,6 +73,7 @@ def _bool(key: str, default: bool = True) -> bool:
     return default
 
 ENABLE_YOUTUBE    = _bool("ENABLE_YOUTUBE",    True)
+ENABLE_YOUTUBE_VIDEO = _bool("ENABLE_YOUTUBE_VIDEO", True)
 ENABLE_SPOTIFY    = _bool("ENABLE_SPOTIFY",    True)
 ENABLE_APPLE      = _bool("ENABLE_APPLE",      True)
 ENABLE_SOUNDCLOUD = _bool("ENABLE_SOUNDCLOUD", True)
