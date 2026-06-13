@@ -345,11 +345,3 @@ owner_warn_frozen : "<emoji id='5431895003821513760'>❄️</emoji> <b>FROZEN AC
 
 ping_1 : "Checking response time, please wait..."
 ping_2 : "<emoji id='6039398100408209720'>☎️</emoji><b>Response time:</b> <code>{0} ms</code>\n\n<b>System status</b>\n\nUptime: <code>{1}</code>\nCPU usage: <code>{2}</code>\nRAM usage: <code>{3}</code>\nDisk usage: <code>{4}</code>\n\n<b>Voice call connection:</b> <code>{5} ms</code>"
-
-related_1 : "<emoji id='5983401171501454028'>💤</emoji> <b>Queue is empty — here are some tracks you might enjoy:</b>"
-related_2 : "Only admins can queue tracks in this chat."
-related_3 : "Suggestion expired, please try again."
-related_4 : "<b>{0}</b> added to queue."
-related_5 : "Could not fetch track details."
-related_6 : "Could not download track."
-related_7 : "Failed to queue: {0}"
