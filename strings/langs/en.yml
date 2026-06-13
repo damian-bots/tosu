@@ -354,4 +354,4 @@ related_4 : "🚫 <b>Admins Only</b>\n\nOnly admins and authorized users can que
 related_5 : "⏳ Adding to queue…"
 related_6 : "❌ Could not fetch track details. Please try /play instead."
 
-RELATED_BTN : "▶ {0}"
+RELATED_BTN : "{0}"
