@@ -50,8 +50,14 @@ def guide_back_markup(_):
 
 
 def welcome_panel(_):
+    """Shown when bot is added to a group.
+    - Setup Guide button
+    - Language button (opens full language panel, Close only — no Back)
+    """
     buttons = [
-        [InlineKeyboardButton(text=_["S_B_4"], callback_data="settings_back_helper")],
-        [InlineKeyboardButton(text=_["S_B_7"], callback_data="setup_guide_helper")],
+        [
+            InlineKeyboardButton(text=_["S_B_7"], callback_data="setup_guide_helper"),
+            InlineKeyboardButton(text=_["S_B_LANG"], callback_data="LG"),
+        ],
     ]
     return buttons

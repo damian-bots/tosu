@@ -21,16 +21,12 @@ def lanuages_keyboard(_):
     # Chunk the buttons into rows of 2 (native Pyrogram approach)
     keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     
-    # Append the back and close buttons at the bottom row
+    # Language panel has only a Close button — no Back button.
     keyboard.append(
         [
             InlineKeyboardButton(
-                text=_["BACK_BUTTON"],
-                callback_data="settingsback_helper",
-            ),
-            InlineKeyboardButton(
-                text=_["CLOSE_BUTTON"], 
-                callback_data="close"
+                text=_["CLOSE_BUTTON"],
+                callback_data="close",
             ),
         ]
     )
