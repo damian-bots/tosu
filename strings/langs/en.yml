@@ -171,12 +171,33 @@ str_3 : "Failed To Stream A YouTube Live, No Live Stream Format Found."
 stream_1 : "<u><b>| Started Streaming</b></u>\n\n<b>Title :</b> <a href={0}>{1}</a>\n\n<b>Duration :</b> {2}\n<b>Requested By :</b> {3}"
 stream_2 : "<u><b>| Started Streaming</b></u>\n\n<b>Stream Type :</b> Live URL\n<b>Requested By :</b> {0}"
 
-remove_1 : "» Please specify the queue position to remove.\n\n<b>Example :</b> <code>/remove 3</code>\n\nCheck the current queue via /queue"
-remove_2 : "» Please use a valid number for the position.\n\n<b>Example :</b> <code>/remove 3</code>"
-remove_3 : "» Position 1 is the currently playing track and cannot be removed.\n\nUse /skip to skip the current track, or specify position 2 or higher."
-remove_4 : "» Position out of range.\n\nQueue only has <b>{0}</b> track(s). Please choose a position between 2 and {0}.\n\nCheck the queue via /queue"
-remove_5 : "» Failed to remove the track from queue.\n\nCheck the queue via /queue"
-remove_6 : "Track Removed From Queue\n\n<b>Position :</b> #{0}\n<b>Title :</b> {1}\n<b>Requested By :</b> {2}\n<b>Removed By :</b> {3}"
+remove_1 : "» Please specify the queue position to remove.
+
+<b>Example :</b> <code>/remove 1</code>
+
+Position 0 is now playing. Position 1 and above are queued tracks.
+
+Check the current queue via /queue"
+remove_2 : "» Please use a valid number for the position.
+
+<b>Example :</b> <code>/remove 1</code>"
+remove_3 : "» Position 0 is the currently playing track and cannot be removed.
+
+Use /skip to skip the current track, or specify position 1 or higher to remove a queued track."
+remove_4 : "» Position out of range.
+
+Queue only has <b>{0}</b> queued track(s). Please choose a position between 1 and {0}.
+
+Check the queue via /queue"
+remove_5 : "» Failed to remove the track from queue.
+
+Check the queue via /queue"
+remove_6 : "Track Removed From Queue
+
+<b>Position :</b> #{0}
+<b>Title :</b> {1}
+<b>Requested By :</b> {2}
+<b>Removed By :</b> {3}"
 
 queue_1 : "Fetching queue, please wait..."
 queue_2 : "The queue is empty. Play something to get started."

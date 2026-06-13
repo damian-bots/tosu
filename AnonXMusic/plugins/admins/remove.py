@@ -17,8 +17,8 @@ async def remove_from_queue(client, message: Message, _, chat_id):
     """Remove a specific track from the queue by position without stopping playback.
 
     Usage: /remove <position>
-    Position 1 = currently playing track (cannot be removed via this command).
-    Position 2+ = queued tracks.
+    Position 0 = currently playing track (cannot be removed via this command).
+    Position 1+ = queued tracks.
     """
     # Require a position argument
     if len(message.command) < 2:
@@ -30,25 +30,23 @@ async def remove_from_queue(client, message: Message, _, chat_id):
 
     position = int(arg)
 
-    # Position must be >= 2 (position 1 is the currently playing track)
-    if position < 2:
+    # Position 0 is the currently playing track — cannot be removed
+    if position == 0:
         return await message.reply_text(_["remove_3"])
 
     check = db.get(chat_id)
     if not check:
         return await message.reply_text(_["queue_2"])
 
-    # Convert to 0-based index
-    index = position - 1
-
-    if index >= len(check):
-        # Tell the user the valid range
-        max_pos = len(check)
+    # position is 1-based for queued tracks; index into db is position itself
+    # (db[0] = now playing, db[1] = first queued, etc.)
+    if position >= len(check):
+        max_pos = len(check) - 1
         return await message.reply_text(_["remove_4"].format(max_pos))
 
-    # Pop the track at the given position
+    # Pop the track at the given index
     try:
-        popped = check.pop(index)
+        popped = check.pop(position)
     except IndexError:
         return await message.reply_text(_["remove_5"])
 
