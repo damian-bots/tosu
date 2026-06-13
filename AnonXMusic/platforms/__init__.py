@@ -10,6 +10,7 @@ from .MXPlayer import MXPlayerAPI
 from .Resso import RessoAPI
 from .Soundcloud import SoundAPI
 from .Spotify import SpotifyAPI
+from .Suggestions import send_related_tracks
 from .Telegram import TeleAPI
 from .Tidal import TidalAPI
 from .Twitch import TwitchAPI

@@ -136,11 +136,11 @@ from AnonXMusic.utils.formatters import check_duration, seconds_to_min, speed_co
 from AnonXMusic.utils.inline.play import stream_markup
 from AnonXMusic.utils.stream.autoclear import auto_clean
 from AnonXMusic.utils.thumbnails import get_thumb
+from AnonXMusic.platforms import send_related_tracks
 from strings import get_string
 
 autoend = {}
 counter = {}
-
 
 async def _clear_(chat_id):
     db[chat_id] = []
@@ -410,6 +410,16 @@ class Call(PyTgCalls):
             await auto_clean(popped)
             if not check:
                 await _clear_(chat_id)
+                # Fire related-track suggestions in the background before leaving
+                if popped and popped.get("vidid") not in (None, "telegram", "soundcloud"):
+                    asyncio.ensure_future(
+                        send_related_tracks(
+                            chat_id,
+                            popped.get("chat_id", chat_id),
+                            popped["vidid"],
+                            popped.get("title", ""),
+                        )
+                    )
                 return await client.leave_group_call(chat_id)
         except Exception:
             try:
