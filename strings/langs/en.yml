@@ -147,7 +147,7 @@ play_14 : "<b>Failed to Download</b>\n\nWe couldn't retrieve the audio for this 
 play_15 : "» Could not process this Spotify link.\n\nOnly tracks, albums, artists and playlists are supported."
 play_16 : "» No active voice chat found.\n\nForce play requires an active voice chat to be running first."
 play_17 : "» Please start a video chat — direct URL streaming requires an active session."
-play_18 : "<b>Usage :</b> /play [song name / YouTube URL / reply to an audio or video file]"
+play_18 : "<b>No search query provided.</b>\n\nPlease tell me what you would like to play. You can send a song name, an artist name, a YouTube link, or reply to an audio or video file with the play command.\n\nFor example: <code>/play Shape of You</code>"
 play_19 : "Playlist Queued:"
 play_20 : "Position —"
 play_21 : "Added {0} tracks to the queue.\n\n<b>Full list :</b> <a href={1}>View Here</a>"
@@ -338,3 +338,14 @@ call_channels_too_much : "<emoji id='5456517450034060547'>📛</emoji> <b>Too Ma
 owner_warn_flood : "<emoji id='5454225457916420314'>😖</emoji> <b>FloodWait Alert</b>\n\n<b>Chat:</b> <code>{0}</code>\n<b>Wait time:</b> <b>{1}s</b>\n\nThe assistant hit a FloodWait while joining a group call. Bot will resume automatically after the wait."
 
 owner_warn_frozen : "<emoji id='5431895003821513760'>❄️</emoji> <b>FROZEN ACCOUNT DETECTED</b>\n\n<b>Chat:</b> <code>{0}</code>\n<b>Error:</b> <pre>{1}</pre>\n\nAn assistant account has been frozen by Telegram (FROZEN_METHOD_INVALID). Please check your session strings and consider replacing the frozen account."
+
+ping_1 : "Checking response time, please wait..."
+ping_2 : "<b>Response time:</b> <code>{0} ms</code>
+
+<b>System status</b>
+Uptime: <code>{1}</code>
+CPU usage: <code>{2}</code>
+RAM usage: <code>{3}</code>
+Disk usage: <code>{4}</code>
+
+<b>Voice call connection:</b> <code>{5} ms</code>"
