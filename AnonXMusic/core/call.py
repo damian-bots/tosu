@@ -410,6 +410,32 @@ class Call(PyTgCalls):
             await auto_clean(popped)
             if not check:
                 await _clear_(chat_id)
+                # ── Related-tracks suggestion ─────────────────────────────
+                if popped:
+                    _finished_title = (popped.get("title") or "").strip()
+                    _finished_vidid = (popped.get("vidid") or "")
+                    _original_chat  = popped.get("chat_id") or chat_id
+                    # Only suggest for YouTube tracks (vidid is a YT video id)
+                    if (
+                        _finished_title
+                        and _finished_vidid
+                        and _finished_vidid not in ("telegram", "soundcloud")
+                        and not _finished_vidid.startswith("http")
+                    ):
+                        try:
+                            from AnonXMusic.plugins.misc.related_tracks import (
+                                send_related_suggestions,
+                            )
+                            asyncio.ensure_future(
+                                send_related_suggestions(
+                                    _original_chat,
+                                    _finished_title,
+                                    _finished_vidid,
+                                )
+                            )
+                        except Exception as _rel_err:
+                            _LOG.warning(f"[RelatedTracks] Could not schedule suggestions: {_rel_err}")
+                # ─────────────────────────────────────────────────────────
                 return await client.leave_group_call(chat_id)
         except Exception:
             try:
