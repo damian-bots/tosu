@@ -1,4 +1,4 @@
-from pyrogram.types import InlineKeyboardButton
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.enums import ButtonStyle
 
 import config
@@ -33,7 +33,25 @@ def private_panel(_):
             InlineKeyboardButton(text=_["S_B_6"], url=config.SUPPORT_CHANNEL),
         ],
         [
-            InlineKeyboardButton(text=_["S_B_7"], url=f"https://github.com/tusar404/ArcMusic"),
+            InlineKeyboardButton(text=_["S_B_7"], callback_data="setup_guide_helper"),
         ],
+    ]
+    return buttons
+
+
+def guide_back_markup(_):
+    buttons = [
+        [
+            InlineKeyboardButton(text=_["BACK_BUTTON"], callback_data="start_back_helper"),
+            InlineKeyboardButton(text=_["CLOSE_BUTTON"], callback_data="close"),
+        ],
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def welcome_panel(_):
+    buttons = [
+        [InlineKeyboardButton(text=_["S_B_4"], callback_data="settings_back_helper")],
+        [InlineKeyboardButton(text=_["S_B_7"], callback_data="setup_guide_helper")],
     ]
     return buttons
