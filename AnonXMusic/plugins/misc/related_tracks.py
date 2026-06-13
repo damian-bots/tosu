@@ -1,11 +1,13 @@
 # AnonXMusic · plugins/misc/related_tracks.py
 #
 # After the queue empties, suggests 4 related YouTube tracks as inline buttons.
+# Uses YouTube Suggestions API (autocomplete) to find genuinely different songs.
 # Tapping a button runs the full stream() flow — identical to /play <song>.
-# Message auto-deletes after 10 s. Queuing respects playtype (admin-only mode).
+# Message auto-deletes after 600 s. Queuing respects playtype (admin-only mode).
 
 import asyncio
 import re
+import unicodedata
 
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -23,14 +25,6 @@ from strings import get_string
 
 # chat_id → [{"title": str, "vidid": str}, ...]
 _suggestions: dict[int, list[dict]] = {}
-
-# Words that indicate a remix/cover/variation — skip any result containing these
-_VARIATION_WORDS = {
-    "lofi", "lo-fi", "slowed", "reverb", "sped up", "nightcore",
-    "remix", "cover", "acoustic", "karaoke", "instrumental",
-    "piano version", "unplugged", "reprise", "extended", "version",
-    "mashup", "tribute", "parody",
-}
 
 
 # ── Permission check ──────────────────────────────────────────────────────────
@@ -53,101 +47,65 @@ async def _is_allowed_to_play(chat_id: int, user_id: int) -> bool:
 
 # ── Title helpers ─────────────────────────────────────────────────────────────
 
-def _strip_meta(text: str) -> str:
-    """Remove parentheses/brackets and common suffixes, return lowercase core."""
-    text = text.lower()
-    text = re.sub(r"[\(\[【][^\)\]】]*[\)\]】]", "", text)
-    for s in (" official video", " official audio", " lyrics", " lyric video",
-              " official", " audio", " video", " ft.", " feat.", " prod."):
-        text = text.replace(s, "")
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def _extract_artist(title: str) -> str:
-    """
-    Best-effort artist extraction.
-    Handles: 'Artist - Song', 'Artist: Song', 'Song by Artist', 'Song ft. Artist'.
-    Returns the artist token or empty string.
-    """
-    t = title.strip()
-    # 'Artist - Song' or 'Artist – Song'
-    for sep in (" - ", " – ", " — "):
-        if sep in t:
-            return t.split(sep, 1)[0].strip()
-    # 'Song by Artist'
-    m = re.search(r"\bby\s+(.+)", t, re.IGNORECASE)
-    if m:
-        return m.group(1).strip()
-    return ""
-
-
-def _is_variation(title: str) -> bool:
-    """Return True if the title looks like a lofi/slowed/remix variation."""
-    low = title.lower()
-    return any(w in low for w in _VARIATION_WORDS)
-
-
 def _to_plain(text: str) -> str:
-    """
-    Normalise any Unicode fancy-font characters (bold, italic, script,
-    double-struck, monospace, fraktur …) to plain ASCII.
-    NFKD decomposition maps every Mathematical Alphanumeric Symbol to its
-    base letter/digit, so a single translate covers all font variants.
-    """
-    import unicodedata
+    """NFKD-normalise Unicode fancy fonts (bold/italic/script/…) to plain ASCII."""
     nfkd = unicodedata.normalize("NFKD", text)
     return re.sub(r"\s+", " ", "".join(c for c in nfkd if ord(c) < 128)).strip()
 
 
 def _short_title(title: str) -> str:
-    """Normalise to plain ASCII font, then cap at 15 chars for the button label."""
+    """Normalise font, cap at 20 chars for the button label."""
     title = _to_plain(title).strip()
-    return title[:15].rstrip() + "…" if len(title) > 15 else title
+    return title[:20].rstrip() + "…" if len(title) > 20 else title
 
 
-# ── YouTube search ────────────────────────────────────────────────────────────
+# ── YouTube Suggestions → Videos ─────────────────────────────────────────────
 
 async def _fetch_related(title: str, vidid: str) -> list[dict]:
-    from youtubesearchpython.__future__ import VideosSearch  # type: ignore
+    """
+    1. Call YouTube Suggestions API with the finished track title.
+    2. Take the returned autocomplete query strings (e.g. "Artist - Other Song").
+    3. Run VideosSearch on each to get the first real video result.
+    4. Deduplicate by vidid, skip the finished track itself.
+    """
+    from youtubesearchpython import Suggestions, ResultMode          # sync
+    from youtubesearchpython.__future__ import VideosSearch          # async
 
-    results: list[dict]  = []
-    seen_ids: set[str]   = {vidid}
-    finished_core        = _strip_meta(title)
-    artist               = _extract_artist(title)
+    # Step 1 – get autocomplete suggestions
+    try:
+        raw = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: Suggestions(language="en", region="US").get(title, mode=ResultMode.dict),
+        )
+        queries: list[str] = (raw or {}).get("result", [])
+    except Exception:
+        queries = []
 
-    # Query order: artist discography first (most different songs),
-    # then a broader genre search. Never search the song name directly
-    # to avoid pulling in covers/remixes of the same track.
-    queries = []
-    if artist:
-        queries.append(f"{artist} songs")        # other songs by same artist
-        queries.append(f"{artist} best songs")
-    queries.append(f"{finished_core.split()[0]} popular songs")  # genre/vibe fallback
+    # Fallback: if Suggestions returned nothing, use the title itself
+    if not queries:
+        queries = [title]
 
+    results: list[dict] = []
+    seen_ids: set[str]  = {vidid}
+
+    # Step 2 – search each suggestion query and take the first video
     for query in queries:
         if len(results) >= 4:
             break
         try:
-            res = await VideosSearch(query, limit=15).next()
-            for item in (res or {}).get("result", []):
-                vid = item.get("id") or item.get("videoId") or ""
-                t   = (item.get("title") or "").strip()
-                if not vid or not t:
-                    continue
-                if vid in seen_ids:
-                    continue
-                # Skip variations (lofi, slowed, remix, cover…)
-                if _is_variation(t):
-                    continue
-                # Skip if core title is identical to the finished track
-                if _strip_meta(t) == finished_core:
-                    continue
-                results.append({"title": t, "vidid": vid})
-                seen_ids.add(vid)
-                if len(results) >= 4:
-                    break
+            res = await VideosSearch(query, limit=3).next()
+            items = (res or {}).get("result", [])
+            if not items:
+                continue
+            item = items[0]
+            vid = item.get("id") or item.get("videoId") or ""
+            t   = (item.get("title") or "").strip()
+            if not vid or not t or vid in seen_ids:
+                continue
+            results.append({"title": t, "vidid": vid})
+            seen_ids.add(vid)
         except Exception:
-            pass
+            continue
 
     return results[:4]
 
@@ -185,7 +143,7 @@ async def send_related_suggestions(chat_id: int, finished_title: str, finished_v
         return
 
     async def _autodel():
-        await asyncio.sleep(10)
+        await asyncio.sleep(600)
         try:
             await msg.delete()
         except Exception:
