@@ -5,9 +5,10 @@
 # Message auto-deletes after 10 s. Queuing respects playtype (admin-only mode).
 
 import asyncio
+import re
 
 from pyrogram import filters
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from AnonXMusic import app
 from AnonXMusic.misc import SUDOERS
@@ -22,6 +23,14 @@ from strings import get_string
 
 # chat_id → [{"title": str, "vidid": str}, ...]
 _suggestions: dict[int, list[dict]] = {}
+
+# Words that indicate a remix/cover/variation — skip any result containing these
+_VARIATION_WORDS = {
+    "lofi", "lo-fi", "slowed", "reverb", "sped up", "nightcore",
+    "remix", "cover", "acoustic", "karaoke", "instrumental",
+    "piano version", "unplugged", "reprise", "extended", "version",
+    "mashup", "tribute", "parody",
+}
 
 
 # ── Permission check ──────────────────────────────────────────────────────────
@@ -42,41 +51,84 @@ async def _is_allowed_to_play(chat_id: int, user_id: int) -> bool:
     return False
 
 
-# ── YouTube search ────────────────────────────────────────────────────────────
+# ── Title helpers ─────────────────────────────────────────────────────────────
 
-def _normalise(text: str) -> str:
-    """Lowercase, strip parens/brackets and common suffixes for comparison."""
-    import re
+def _strip_meta(text: str) -> str:
+    """Remove parentheses/brackets and common suffixes, return lowercase core."""
     text = text.lower()
-    text = re.sub(r"[\(\[【][^\)\]】]*[\)\]】]", "", text)   # remove (…) / […]
+    text = re.sub(r"[\(\[【][^\)\]】]*[\)\]】]", "", text)
     for s in (" official video", " official audio", " lyrics", " lyric video",
-              " official", " audio", " video", " ft.", " feat."):
+              " official", " audio", " video", " ft.", " feat.", " prod."):
         text = text.replace(s, "")
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _extract_artist(title: str) -> str:
+    """
+    Best-effort artist extraction.
+    Handles: 'Artist - Song', 'Artist: Song', 'Song by Artist', 'Song ft. Artist'.
+    Returns the artist token or empty string.
+    """
+    t = title.strip()
+    # 'Artist - Song' or 'Artist – Song'
+    for sep in (" - ", " – ", " — "):
+        if sep in t:
+            return t.split(sep, 1)[0].strip()
+    # 'Song by Artist'
+    m = re.search(r"\bby\s+(.+)", t, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+    return ""
+
+
+def _is_variation(title: str) -> bool:
+    """Return True if the title looks like a lofi/slowed/remix variation."""
+    low = title.lower()
+    return any(w in low for w in _VARIATION_WORDS)
+
+
+def _to_plain(text: str) -> str:
+    """
+    Normalise any Unicode fancy-font characters (bold, italic, script,
+    double-struck, monospace, fraktur …) to plain ASCII.
+    NFKD decomposition maps every Mathematical Alphanumeric Symbol to its
+    base letter/digit, so a single translate covers all font variants.
+    """
+    import unicodedata
+    nfkd = unicodedata.normalize("NFKD", text)
+    return re.sub(r"\s+", " ", "".join(c for c in nfkd if ord(c) < 128)).strip()
+
+
+def _short_title(title: str) -> str:
+    """Normalise to plain ASCII font, then cap at 15 chars for the button label."""
+    title = _to_plain(title).strip()
+    return title[:15].rstrip() + "…" if len(title) > 15 else title
+
+
+# ── YouTube search ────────────────────────────────────────────────────────────
+
 async def _fetch_related(title: str, vidid: str) -> list[dict]:
-    """
-    Search YouTube for tracks related to the finished one.
-    Excludes:
-      - the finished track's own vidid
-      - any result whose normalised title is too similar to the finished title
-    """
     from youtubesearchpython.__future__ import VideosSearch  # type: ignore
 
-    results: list[dict] = []
-    seen_ids: set[str]  = {vidid}
-    finished_norm       = _normalise(title)
+    results: list[dict]  = []
+    seen_ids: set[str]   = {vidid}
+    finished_core        = _strip_meta(title)
+    artist               = _extract_artist(title)
 
-    # Two passes: artist+similar, then artist name alone
-    clean = _normalise(title)
-    queries = [f"{clean} similar", clean]
+    # Query order: artist discography first (most different songs),
+    # then a broader genre search. Never search the song name directly
+    # to avoid pulling in covers/remixes of the same track.
+    queries = []
+    if artist:
+        queries.append(f"{artist} songs")        # other songs by same artist
+        queries.append(f"{artist} best songs")
+    queries.append(f"{finished_core.split()[0]} popular songs")  # genre/vibe fallback
 
     for query in queries:
         if len(results) >= 4:
             break
         try:
-            res = await VideosSearch(query, limit=10).next()
+            res = await VideosSearch(query, limit=15).next()
             for item in (res or {}).get("result", []):
                 vid = item.get("id") or item.get("videoId") or ""
                 t   = (item.get("title") or "").strip()
@@ -84,8 +136,11 @@ async def _fetch_related(title: str, vidid: str) -> list[dict]:
                     continue
                 if vid in seen_ids:
                     continue
-                # Skip if normalised title is too close to the finished track
-                if _normalise(t) == finished_norm:
+                # Skip variations (lofi, slowed, remix, cover…)
+                if _is_variation(t):
+                    continue
+                # Skip if core title is identical to the finished track
+                if _strip_meta(t) == finished_core:
                     continue
                 results.append({"title": t, "vidid": vid})
                 seen_ids.add(vid)
@@ -97,11 +152,7 @@ async def _fetch_related(title: str, vidid: str) -> list[dict]:
     return results[:4]
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _short_title(title: str) -> str:
-    return title[:38].rstrip() + "…" if len(title) > 38 else title
-
+# ── Inline keyboard ───────────────────────────────────────────────────────────
 
 def _markup(suggestions: list[dict]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -165,7 +216,6 @@ async def related_queue_cb(client, callback_query):
     vidid  = chosen["vidid"]
     title  = chosen["title"]
 
-    # Remove suggestion message immediately
     try:
         await callback_query.message.delete()
     except Exception:
@@ -174,18 +224,12 @@ async def related_queue_cb(client, callback_query):
 
     await callback_query.answer(title[:50], show_alert=False)
 
-    # ── Mirror the exact /play flow ───────────────────────────────────────────
     try:
         from AnonXMusic import YouTube
         from AnonXMusic.utils.stream.stream import stream as do_stream
 
-        user_name    = callback_query.from_user.mention
-        playmode     = await get_playmode(chat_id)
-
-        # Send a "processing" message — stream() edits/deletes it like /play does
-        mystic = await app.send_message(chat_id, _["play_1"])
-
-        # Fetch track details — returns the same dict that play.py passes to stream()
+        user_name = callback_query.from_user.mention
+        mystic    = await app.send_message(chat_id, _["play_1"])
         details, track_id = await YouTube.track(vidid, videoid=True)
 
         await do_stream(
@@ -195,8 +239,8 @@ async def related_queue_cb(client, callback_query):
             details,
             chat_id,
             user_name,
-            chat_id,            # original_chat_id
-            video=None,         # audio only
+            chat_id,
+            video=None,
             streamtype="youtube",
             spotify=None,
             forceplay=None,
