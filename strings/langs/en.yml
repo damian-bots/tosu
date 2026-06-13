@@ -338,20 +338,3 @@ owner_warn_frozen : "<emoji id='5431895003821513760'>❄️</emoji> <b>FROZEN AC
 
 ping_1 : "Checking response time, please wait..."
 ping_2 : "<emoji id='6039398100408209720'>☎️</emoji><b>Response time:</b> <code>{0} ms</code>\n\n<b>System status</b>\n\nUptime: <code>{1}</code>\nCPU usage: <code>{2}</code>\nRAM usage: <code>{3}</code>\nDisk usage: <code>{4}</code>\n\n<b>Voice call connection:</b> <code>{5} ms</code>"
-
-# ── Remove from Queue ─────────────────────────────────────────────────────────
-remove_1 : "❌ <b>Invalid Usage</b>\n\nUsage: <code>/remove &lt;position&gt;</code>\nExample: <code>/remove 3</code> removes track at position #3.\n\n<i>Position 1 is the currently playing track.</i>"
-remove_2 : "⚠️ <b>Can't Remove Currently Playing Track</b>\n\nPosition <b>1</b> is the track that's currently streaming.\nUse /skip to move past it."
-remove_3 : "❌ <b>Invalid Position</b>\n\n<b>#{0}</b> is out of range. The queue currently has <b>{1}</b> track(s).\nUse a number between <b>2</b> and <b>{1}</b>."
-remove_4 : "🗑 <b>Removed from Queue</b>\n\n<b>#{0}</b> · {1}\n⏱ Duration: {2}\n👤 Requested by: {3}"
-remove_5 : "» You Don't Have Permission To Remove Tracks From The Queue."
-
-# ── Related Tracks ────────────────────────────────────────────────────────────
-related_1 : "🎵 <b>You Might Also Like</b>\n\nHere are some tracks similar to what just played.\nTap a button below to add one to the queue.\n\n{0}\n\n<i>⏳ This message will disappear in 10 minutes.</i>"
-related_2 : "✅ <b>Added to Queue</b>\n\n🎵 {0}\n⏱ Duration: {1}\n📍 Position: #{2}\n👤 Queued by: {3}"
-related_3 : "▶️ <b>Now Playing</b>\n\n🎵 {0}\n⏱ Duration: {1}\n👤 Requested by: {2}"
-related_4 : "🚫 <b>Admins Only</b>\n\nOnly admins and authorized users can queue tracks in this group.\n\nAsk an admin to queue it, or change the setting via /playmode."
-related_5 : "⏳ Adding to queue…"
-related_6 : "❌ Could not fetch track details. Please try /play instead."
-
-RELATED_BTN : "{0}"
