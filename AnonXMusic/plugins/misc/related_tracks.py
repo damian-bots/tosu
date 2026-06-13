@@ -185,7 +185,7 @@ async def send_related_suggestions(chat_id: int, finished_title: str, finished_v
         return
 
     async def _autodel():
-        await asyncio.sleep(10)
+        await asyncio.sleep(600)
         try:
             await msg.delete()
         except Exception:
