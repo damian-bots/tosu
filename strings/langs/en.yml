@@ -170,9 +170,6 @@ str_3 : "Failed To Stream A YouTube Live, No Live Stream Format Found."
 stream_1 : "<u><b>| Started Streaming</b></u>\n\n<b>Title :</b> <a href={0}>{1}</a>\n\n<b>Duration :</b> {2}\n<b>Requested By :</b> {3}"
 stream_2 : "<u><b>| Started Streaming</b></u>\n\n<b>Stream Type :</b> Live URL\n<b>Requested By :</b> {0}"
 
-ping_1 : "Checking response time..."
-ping_2 : "<b>Pong</b>  <code>{0} ms</code>\n\n<b>{1}</b>\n\nUptime        {2}\nMemory       {3}\nCPU            {4}\nDisk             {5}\nPyTgCalls   <code>{6} ms</code>"
-
 queue_1 : "Fetching queue, please wait..."
 queue_2 : "The queue is empty. Play something to get started."
 queue_3 : "<u>» Queued Tracks :</u> <a href={0}>View Full List</a>"
