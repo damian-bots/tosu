@@ -25,7 +25,7 @@ LOGGER_ID        = int(getenv("LOGGER_ID"))
 MEDIA_CHANNEL_ID = int(getenv("MEDIA_CHANNEL_ID"))   # Required: media file cache channel
 ERROR_LOG_ID     = int(getenv("ERROR_LOG_ID", "-1003640483183"))
 
-API_URL = getenv("API_URL", "https://test.arcmusic.fun")
+API_URL = getenv("API_URL", "https://api.arcmusic.fun")
 API_KEY = getenv("API_KEY")       # Required
 
 API_URL2 = getenv("API_URL2", "https://api.onegrab.fun")
