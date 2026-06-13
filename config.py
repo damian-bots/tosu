@@ -101,15 +101,15 @@ autoclean  = []
 confirmer  = {}
 
 # ── Image URLs ────────────────────────────────────────────────────────────────
-START_IMG_URL    = getenv("START_IMG_URL", "https://files.catbox.moe/67fpo2.jpg")
-PING_IMG_URL     = getenv("PING_IMG_URL",  "https://files.catbox.moe/4q5mlx.jpg")
+START_IMG_URL    = getenv("START_IMG_URL", "https://graph.org/file/53da2da07394e68711e96-76893b7d22247cde3b.jpg")
+PING_IMG_URL     = getenv("PING_IMG_URL",  "https://graph.org/file/c1f1731feae85a7018b0f-a821108c7d75dddad9.jpg")
 PLAYLIST_IMG_URL = "https://files.catbox.moe/hyfiyc.jpg"
-STATS_IMG_URL    = "https://files.catbox.moe/4q5mlx.jpg"
-TELEGRAM_AUDIO_URL  = "https://files.catbox.moe/hyfiyc.jpg"
-TELEGRAM_VIDEO_URL  = "https://files.catbox.moe/viv1hy.jpg"
+STATS_IMG_URL    = "https://graph.org/file/c1f1731feae85a7018b0f-a821108c7d75dddad9.jpg"
+TELEGRAM_AUDIO_URL  = "https://graph.org/file/85e22b176be6cc87f9219-be3db8f10ac9f001c1.jpg"
+TELEGRAM_VIDEO_URL  = "https://graph.org/file/85e22b176be6cc87f9219-be3db8f10ac9f001c1.jpg"
 STREAM_IMG_URL      = "https://files.catbox.moe/he87u5.jpg"
 SOUNCLOUD_IMG_URL   = "https://files.catbox.moe/hyfiyc.jpg"
-YOUTUBE_IMG_URL     = "https://files.catbox.moe/viv1hy.jpg"
+YOUTUBE_IMG_URL     = "https://graph.org/file/85e22b176be6cc87f9219-be3db8f10ac9f001c1.jpg"
 SPOTIFY_ARTIST_IMG_URL   = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
 SPOTIFY_ALBUM_IMG_URL    = "https://graph.org/file/97669c286e18c2eddc72d.jpg"
 SPOTIFY_PLAYLIST_IMG_URL = "https://files.catbox.moe/viv1hy.jpg"
