@@ -93,6 +93,7 @@ async def start_pm(client, message: Message, _):
     await message.reply_photo(
         photo=config.START_IMG_URL,
         caption=_["start_2"].format(message.from_user.mention, app.mention),
+        effect_id=5159385139981059251,
         reply_markup=InlineKeyboardMarkup(private_panel(_)),
     )
     if await is_on_off(2):
