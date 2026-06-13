@@ -26,10 +26,7 @@ _suggestions: dict[int, list[dict]] = {}
 
 # Words that indicate a remix/cover/variation — skip any result containing these
 _VARIATION_WORDS = {
-    "lofi", "lo-fi", "slowed", "reverb", "sped up", "nightcore",
-    "remix", "cover", "acoustic", "karaoke", "instrumental",
-    "piano version", "unplugged", "reprise", "extended", "version",
-    "mashup", "tribute", "parody",
+    "mashup", "tribute",
 }
 
 
@@ -102,7 +99,7 @@ def _to_plain(text: str) -> str:
 def _short_title(title: str) -> str:
     """Normalise to plain ASCII font, then cap at 15 chars for the button label."""
     title = _to_plain(title).strip()
-    return title[:15].rstrip() + "…" if len(title) > 15 else title
+    return title[:20].rstrip() + "…" if len(title) > 20 else title
 
 
 # ── YouTube search ────────────────────────────────────────────────────────────
