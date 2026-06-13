@@ -240,7 +240,7 @@ def _overlaps_played(title: str, played_tokens: set[str]) -> bool:
 def _short_title(title: str) -> str:
     """Cap button label at 22 chars."""
     t = _to_plain(title).strip() or title.strip()
-    return t[:22].rstrip() + "…" if len(t) > 22 else t
+    return t[:26].rstrip() + "." if len(t) > 26 else t
 
 
 # ── Collect played token history ──────────────────────────────────────────────
