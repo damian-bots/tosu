@@ -1,9 +1,3 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║        Copyright © tusar404 — All Rights Reserved               ║
-# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
-# ║        Unauthorized copying or distribution is prohibited        ║
-# ╚══════════════════════════════════════════════════════════════════╝
-
 """
 AnonXMusic/plugins/play/splay.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -73,6 +67,7 @@ async def splay_command(client, message: Message, _):
         quote=True,
     )
 
+    # ── 1. Search via API-2 ──────────────────────────────────────────────────
     try:
         from AnonXMusic.platforms.Api import ApiPlatform
         api = ApiPlatform()
@@ -123,6 +118,7 @@ async def splay_command(client, message: Message, _):
             f"{config.DURATION_LIMIT_MIN} min."
         )
 
+    # ── 2. Show match instantly ──────────────────────────────────────────────
     artist_line = f"\n🎤 <b>Artist:</b> {artist}" if artist else ""
     await mystic.edit_text(
         f"🎵 <b>Found on Spotify</b>\n\n"
@@ -132,6 +128,7 @@ async def splay_command(client, message: Message, _):
         disable_web_page_preview=True,
     )
 
+    # ── 3. Download via API-2 ────────────────────────────────────────────────
     try:
         file_path = await api.download(track_url)
     except Exception as exc:
@@ -149,6 +146,7 @@ async def splay_command(client, message: Message, _):
             f"Try: <code>/play {title}</code> to search YouTube instead."
         )
 
+    # Ensure we have an absolute path (pytgcalls / ffprobe requires it)
     if not os.path.isabs(file_path):
         file_path = os.path.join(os.getcwd(), file_path)
 
@@ -159,6 +157,7 @@ async def splay_command(client, message: Message, _):
             f"Try: <code>/play {title}</code> to search YouTube instead."
         )
 
+    # ── 4. Feed into stream() ── mystic is edited in-place by stream() ───────
     details = {
         "title":        title,
         "link":         track_url,

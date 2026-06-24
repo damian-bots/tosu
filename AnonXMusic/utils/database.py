@@ -1,9 +1,3 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║        Copyright © tusar404 — All Rights Reserved               ║
-# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
-# ║        Unauthorized copying or distribution is prohibited        ║
-# ╚══════════════════════════════════════════════════════════════════╝
-
 import random
 from datetime import datetime
 from typing import Dict, List, Union
@@ -31,6 +25,7 @@ usersdb = mongodb.tgusersdb
 statsdb = mongodb.bot_stats
 searchdb = mongodb.search_cache
 
+# Shifting to memory [mongo sucks often]
 active = []
 activevideo = []
 assistantdict = {}
@@ -757,6 +752,9 @@ async def get_bot_stats():
     }
 
 
+# ── API Usage Tracking ────────────────────────────────────────────────────────
+# api_1 = Arc/deadline-tech (YouTube download via v2_download / optimized_download)
+# api_2 = OneGrab (Spotify, Apple, Deezer, Gaana, Tidal, JioSaavn, Twitch, Kick, MXPlayer)
 
 apiusagedb = mongodb.api_usage
 

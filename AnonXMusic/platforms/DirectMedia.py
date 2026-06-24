@@ -1,9 +1,3 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║        Copyright © tusar404 — All Rights Reserved               ║
-# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
-# ║        Unauthorized copying or distribution is prohibited        ║
-# ╚══════════════════════════════════════════════════════════════════╝
-
 """
 DirectMedia.py — Handler for raw HTTP/HTTPS URLs and M3U8 streams.
 
@@ -32,6 +26,7 @@ _MEDIA_EXTENSIONS = {
 
 _FFPROBE_TIMEOUT = 10  # seconds
 
+# Regex to find a useful title in the URL path
 _PATH_TITLE_RE = re.compile(r"([^/?#]+)(?:\.[a-zA-Z0-9]{2,5})?$")
 
 
@@ -56,6 +51,7 @@ def _title_from_url(url: str) -> str:
         match = _PATH_TITLE_RE.search(path)
         if match:
             raw = unquote(match.group(1))
+            # Replace underscores/hyphens with spaces and title-case
             return re.sub(r"[-_]+", " ", raw).strip().title() or "Direct Stream"
     except Exception:
         pass
@@ -92,6 +88,7 @@ async def _ffprobe_info(url: str) -> dict | None:
         fmt = data.get("format", {})
         streams = data.get("streams", [])
 
+        # Duration
         duration_sec = 0
         raw_dur = fmt.get("duration", "")
         if raw_dur and raw_dur not in ("N/A", ""):
@@ -102,6 +99,7 @@ async def _ffprobe_info(url: str) -> dict | None:
 
         is_live = duration_sec == 0
 
+        # Title from tags
         tags = fmt.get("tags", {})
         title = (
             tags.get("title")
@@ -111,6 +109,7 @@ async def _ffprobe_info(url: str) -> dict | None:
         if not title:
             title = _title_from_url(url)
 
+        # Detect codec type (audio vs video)
         has_video = any(s.get("codec_type") == "video" for s in streams)
         codec_type = "video" if has_video else "audio"
 
@@ -156,12 +155,18 @@ class DirectMediaAPI:
         """Check if the URL looks like a direct media link worth attempting."""
         if not _is_valid_url(url):
             return False
+        # Always try M3U8 links
         if _is_m3u8(url):
             return True
+        # Try URLs whose path ends in a known media extension
         path_lower = urlparse(url).path.lower()
         for ext in _MEDIA_EXTENSIONS:
             if path_lower.endswith(ext):
                 return True
+        # As a last resort, accept any http/https URL that wasn't matched
+        # by the known platforms above — play.py calls this only in the
+        # final `else` branch, so we know it's unrecognised by every other
+        # platform handler.
         return True
 
     async def get_info(self, url: str) -> dict | None:
@@ -185,6 +190,8 @@ class DirectMediaAPI:
         if not _is_valid_url(url):
             return None
 
+        # For M3U8 we skip the HEAD check (CDNs often reject HEAD)
+        # and go straight to ffprobe which handles HLS properly.
         if not _is_m3u8(url):
             reachable = await _head_check(url)
             if not reachable:

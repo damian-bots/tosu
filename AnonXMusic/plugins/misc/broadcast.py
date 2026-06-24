@@ -1,8 +1,10 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║        Copyright © tusar404 — All Rights Reserved               ║
-# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
-# ║        Unauthorized copying or distribution is prohibited        ║
-# ╚══════════════════════════════════════════════════════════════════╝
+# AnonXMusic · plugins/misc/broadcast.py  (v1.0.4)
+# Stable broadcast with:
+#   - asyncio.Semaphore concurrency limit
+#   - Batch processing with state persistence (resume after restart)
+#   - Full error logging per delivery failure
+#   - Auto-resume prompt to owner on bot restart
+#   - cancel / resume / clearfailed commands
 
 import asyncio
 import json
@@ -34,6 +36,7 @@ from AnonXMusic.utils.database import (
 
 LOG = LOGGER(__name__)
 
+# ── Config ────────────────────────────────────────────────────────────────────
 SEMAPHORE  = asyncio.Semaphore(5)
 BATCH_SIZE = 50
 
@@ -46,6 +49,7 @@ CANCEL_BROADCAST  = False
 FAILED_IDS: set   = set()
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _readable_time(seconds: int) -> str:
     parts = []
@@ -90,6 +94,7 @@ async def _save_failed():
 _load_failed()
 
 
+# ── Core broadcast runner ─────────────────────────────────────────────────────
 
 async def run_broadcast(state: dict, targets: list, status_msg=None):
     global CANCEL_BROADCAST
@@ -230,6 +235,7 @@ async def run_broadcast(state: dict, targets: list, status_msg=None):
             await _write_json(STATE_FILE, new_state)
             await _save_failed()
 
+            # Progress update every 15 s
             if status_msg and (time.time() - last_update) > 15:
                 elapsed = max(time.time() - start_time, 1)
                 total_done = sent_users + sent_chats + failed_count + skipped_count
@@ -287,6 +293,7 @@ def _cleanup_files():
             os.remove(f)
 
 
+# ── Commands ──────────────────────────────────────────────────────────────────
 
 @app.on_message(filters.command("broadcast") & SUDOERS)
 async def broadcast_command(client, message: Message):
@@ -342,7 +349,7 @@ async def broadcast_command(client, message: Message):
         LOG.error(f"[Broadcast] ID extraction error: {e}")
         return await msg.edit_text(f"❌ <b>Error extracting IDs:</b> <code>{e}</code>")
 
-    targets = list(set(raw_ids))
+    targets = list(set(x for x in raw_ids if x is not None))
     if not targets:
         return await msg.edit_text("❌ <b>No targets found in database.</b>")
 
@@ -395,6 +402,7 @@ async def clear_failed_cmd(client, message: Message):
     await message.reply_text("✅ <b>Cleared failed/blocked cache.</b>")
 
 
+# ── Callback buttons ──────────────────────────────────────────────────────────
 
 @app.on_callback_query(
     filters.regex(r"^(resume_broadcast|cancel_broadcast)$")
@@ -416,6 +424,8 @@ async def broadcast_callback(client, query: CallbackQuery):
             await query.message.edit_text("❌ <b>Broadcast data expired or invalid.</b>")
 
 
+# ── Admin-list refresh loop ────────────────────────────────────────────────────
+# (Keep active admin list fresh every 10 s)
 
 from AnonXMusic.utils.database import get_active_chats, get_authuser_names
 from AnonXMusic.utils.formatters import alpha_to_int
@@ -439,6 +449,7 @@ async def _refresh_admin_list():
             pass
 
 
+# ── Auto-resume on startup ─────────────────────────────────────────────────────
 
 async def _auto_resume_check():
     await asyncio.sleep(5)
@@ -465,5 +476,8 @@ async def _auto_resume_check():
         LOG.error(f"[Broadcast] Auto-resume check failed: {e}")
 
 
-asyncio.create_task(_refresh_admin_list())
-asyncio.create_task(_auto_resume_check())
+try:
+    asyncio.get_event_loop().create_task(_refresh_admin_list())
+    asyncio.get_event_loop().create_task(_auto_resume_check())
+except RuntimeError:
+    pass

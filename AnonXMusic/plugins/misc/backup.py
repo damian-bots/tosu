@@ -1,9 +1,3 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║        Copyright © tusar404 — All Rights Reserved               ║
-# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
-# ║        Unauthorized copying or distribution is prohibited        ║
-# ╚══════════════════════════════════════════════════════════════════╝
-
 import os
 import json
 import shutil
@@ -87,10 +81,12 @@ async def _create_backup_zip() -> str:
     return zip_path
 
 async def _send_backup(zip_path: str, chat_id: int, title: str):
+    # Dynamic Date/Time for Caption
     now = datetime.now()
     date_str = now.strftime("%d %B %Y")
     time_str = now.strftime("%I:%M %p")
     
+    # Calculate file size
     try:
         file_size = os.path.getsize(zip_path)
         size_str = f"{file_size / 1024 / 1024:.2f} MB"
@@ -108,6 +104,7 @@ async def _send_backup(zip_path: str, chat_id: int, title: str):
     
     await app.send_document(chat_id=chat_id, document=zip_path, caption=caption)
     
+    # Cleanup after sending
     if os.path.exists(zip_path):
         try:
             os.remove(zip_path)
@@ -151,6 +148,7 @@ async def restore_backup(_: Client, message: Message):
     )
 
     try:
+        # Download
         file_path = await message.reply_to_message.download(file_name=os.path.join(BACKUP_DIR, "restore.zip"))
         
         extract_path = os.path.join(BACKUP_DIR, "restore_tmp")
@@ -161,11 +159,13 @@ async def restore_backup(_: Client, message: Message):
         with zipfile.ZipFile(file_path, 'r') as zip_ref:
             zip_ref.extractall(extract_path)
 
+        # Connect DB
         client = AsyncIOMotorClient(MONGO_DB_URI)
         db = client[DB_NAME]
         
         restored_colls = []
 
+        # Restore collections
         for root, _, files in os.walk(extract_path):
             for file in files:
                 if file.endswith(".json"):
@@ -173,14 +173,17 @@ async def restore_backup(_: Client, message: Message):
                     json_path = os.path.join(root, file)
                     
                     with open(json_path, "r", encoding="utf-8") as f:
+                        # Use custom hook to restore ISO strings to datetime objects
                         data = json.load(f, object_hook=_json_decoder_hook)
                     
                     if data:
                         collection = db[coll_name]
+                        # Wipe existing data to ensure clean state
                         await collection.delete_many({}) 
                         await collection.insert_many(data)
                         restored_colls.append(coll_name)
 
+        # Cleanup
         shutil.rmtree(extract_path)
         os.remove(file_path)
 
@@ -197,6 +200,7 @@ async def restore_backup(_: Client, message: Message):
         )
         LOGGER(__name__).error(f"Restore failed: {e}")
 
+# --- Auto Backup Scheduler ---
 async def daily_backup_task():
     while True:
         now = datetime.now()
@@ -210,6 +214,7 @@ async def daily_backup_task():
         try:
             zip_path = await _create_backup_zip()
             
+            # Formatted string for the title: "17 Feb 2026 | 05:30 AM"
             date_time_str = datetime.now().strftime("%d %b %Y | %I:%M %p")
             
             await _send_backup(

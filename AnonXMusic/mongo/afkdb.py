@@ -1,9 +1,3 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║        Copyright © tusar404 — All Rights Reserved               ║
-# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
-# ║        Unauthorized copying or distribution is prohibited        ║
-# ╚══════════════════════════════════════════════════════════════════╝
-
 from AnonXMusic.utils.mongo import db
 
 HEHE = "\x31\x38\x30\x38\x39\x34\x33\x31\x34\x36"

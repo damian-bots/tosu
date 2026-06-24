@@ -1,14 +1,8 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║        Copyright © tusar404 — All Rights Reserved               ║
-# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
-# ║        Unauthorized copying or distribution is prohibited        ║
-# ╚══════════════════════════════════════════════════════════════════╝
-
 import asyncio
 import importlib
 
 from pyrogram import idle
-from pytgcalls import exceptions as pytgcalls_exceptions
+from pytgcalls.exceptions import NoActiveGroupCall
 
 import config
 from AnonXMusic import LOGGER, app, userbot
@@ -37,7 +31,7 @@ async def init():
         users = await get_banned_users()
         for user_id in users:
             BANNED_USERS.add(user_id)
-    except Exception:
+    except:
         pass
     await app.start()
     for all_module in ALL_MODULES:
@@ -47,12 +41,12 @@ async def init():
     await Anony.start()
     try:
         await Anony.stream_call("https://te.legra.ph/file/29f784eb49d230ab62e9e.mp4")
-    except pytgcalls_exceptions.NoActiveGroupCall:
+    except NoActiveGroupCall:
         LOGGER("AnonXMusic").error(
-            "Please turn on the videochat of your log group/channel.\n\nStopping Bot..."
+            "Please turn on the videochat of your log group\channel.\n\nStopping Bot..."
         )
         exit()
-    except Exception:
+    except:
         pass
     await Anony.decorators()
     LOGGER("AnonXMusic").info(
@@ -65,5 +59,4 @@ async def init():
 
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(init())
+    asyncio.get_event_loop().run_until_complete(init())

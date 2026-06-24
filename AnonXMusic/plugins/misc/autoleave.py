@@ -1,9 +1,3 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║        Copyright © tusar404 — All Rights Reserved               ║
-# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
-# ║        Unauthorized copying or distribution is prohibited        ║
-# ╚══════════════════════════════════════════════════════════════════╝
-
 import asyncio
 from datetime import datetime, timedelta
 from contextlib import suppress
@@ -24,6 +18,7 @@ EXCLUDED_CHATS = {
     -1001549206010,
 }
 
+# Explicitly named to reflect the maximum limit per individual assistant
 MAX_LEAVE_PER_ASSISTANT = 200
 
 
@@ -31,8 +26,10 @@ def get_next_run_time() -> datetime:
     """Get the exact next run time for 4:30 AM IST."""
     now = datetime.now(IST)
     
+    # Target 4:30 AM today
     target = now.replace(hour=13, minute=45, second=0, microsecond=0)
     
+    # If 4:30 AM has already passed today, target 4:30 AM tomorrow
     if now >= target:
         target += timedelta(days=1)
         
@@ -45,13 +42,16 @@ async def auto_leave():
         return
     
     while True:
+        # Calculate next run time
         next_run = get_next_run_time()
         now = datetime.now(IST)
         wait_seconds = int((next_run - now).total_seconds())
         
+        # Wait until scheduled time
         if wait_seconds > 0:
             await asyncio.sleep(wait_seconds)
         
+        # Get assistants
         from AnonXMusic.core.userbot import assistants
         
         for num in assistants:
@@ -60,6 +60,7 @@ async def auto_leave():
                 left = 0
                 
                 async for dialog in client.get_dialogs():
+                    # Check the limit at the start of every dialog iteration for THIS assistant
                     if left >= MAX_LEAVE_PER_ASSISTANT:
                         break
                         
@@ -73,9 +74,11 @@ async def auto_leave():
                     with suppress(Exception):
                         await client.leave_chat(dialog.chat.id)
                         left += 1
+                        # Crucial delay: Prevents Telegram from throwing a FloodWait error
                         await asyncio.sleep(1.5)
                         
             except Exception as e:
+                # Silently skip to the next assistant if this one fails to initialize
                 pass
 
 
@@ -108,5 +111,6 @@ async def auto_end():
                 )
 
 
+# Start background tasks
 asyncio.create_task(auto_leave())
 asyncio.create_task(auto_end())

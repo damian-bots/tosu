@@ -1,8 +1,18 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║        Copyright © tusar404 — All Rights Reserved               ║
-# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
-# ║        Unauthorized copying or distribution is prohibited        ║
-# ╚══════════════════════════════════════════════════════════════════╝
+# AnonXMusic · error_logger.py  (v1.0.4)
+# Logs EVERY unhandled exception to terminal (stderr) AND to ERROR_LOG_ID.
+# Also catches song download/search failures when called as a decorator.
+#
+# Usage:
+#   @error_logger
+#   async def foo(): ...
+#
+#   @error_logger(label="YouTube Download")
+#   async def bar(): ...
+#
+# The decorator is fully transparent:
+#   • Success  → return value passed through unchanged.
+#   • Failure  → full traceback printed to terminal + sent to ERROR_LOG_ID,
+#                then exception is RE-RAISED so callers handle it normally.
 
 import asyncio
 import functools
@@ -109,11 +119,14 @@ def error_logger(_func: Optional[Callable] = None, *, label: Optional[str] = Non
             try:
                 return await func(*args, **kwargs)
             except Exception as exc:
+                # 1. Always print full traceback to terminal immediately
                 _log.error(
                     f"[error_logger] Exception in {func.__qualname__}:\n"
                     + "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
                 )
+                # 2. Ship to ERROR_LOG_ID (non-blocking)
                 asyncio.ensure_future(_send_error(func, exc, args, kwargs, label))
+                # 3. Re-raise so callers can handle it
                 raise
 
         return wrapper

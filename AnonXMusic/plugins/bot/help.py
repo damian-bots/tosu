@@ -1,8 +1,5 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║        Copyright © tusar404 — All Rights Reserved               ║
-# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
-# ║        Unauthorized copying or distribution is prohibited        ║
-# ╚══════════════════════════════════════════════════════════════════╝
+# AnonXMusic · plugins/bot/help.py  (v1.0.5)
+# Clean help command — music-related sections only.
 
 import inspect
 from typing import Union
@@ -71,6 +68,7 @@ async def helper_cb(client, CallbackQuery, _):
     cb      = cb_data.split(None, 1)[1]
     keyboard = help_back_markup(_)
 
+    # Music-related help pages only
     _pages = {
         "hb1":  helpers.HELP_1,   # Admin
         "hb2":  helpers.HELP_2,   # Auth

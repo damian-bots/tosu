@@ -1,9 +1,3 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║        Copyright © tusar404 — All Rights Reserved               ║
-# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
-# ║        Unauthorized copying or distribution is prohibited        ║
-# ╚══════════════════════════════════════════════════════════════════╝
-
 import asyncio
 
 from pyrogram.enums import ChatMemberStatus
@@ -28,11 +22,12 @@ from AnonXMusic.utils.database import (
     is_maintenance,
 )
 from AnonXMusic.utils.inline import botplaylist_markup
-from config import PLAYLIST_IMG_URL, SUPPORT_CHAT, adminlist
+from config import SUPPORT_CHAT, adminlist
 from strings import get_string
 
 links = {}
 
+# Commands that require admin / auth-user access regardless of playtype setting
 _FORCE_COMMANDS = {"playforce", "vplayforce", "cplayforce", "cvplayforce"}
 
 
@@ -85,9 +80,8 @@ def PlayWrapper(command):
                 if "stream" in message.command:
                     return await message.reply_text(_["str_1"])
                 buttons = botplaylist_markup(_)
-                return await message.reply_photo(
-                    photo=PLAYLIST_IMG_URL,
-                    caption=_["play_18"],
+                return await message.reply_text(
+                    _["play_18"],
                     reply_markup=InlineKeyboardMarkup(buttons),
                 )
 
@@ -107,11 +101,13 @@ def PlayWrapper(command):
         playmode = await get_playmode(message.chat.id)
         playty = await get_playtype(message.chat.id)
 
+        # --- Force-play commands: always admin / auth-user only ---
         cmd = message.command[0].lower()
         if cmd in _FORCE_COMMANDS:
             if message.from_user.id not in SUDOERS:
                 admins = adminlist.get(message.chat.id)
                 if not admins or message.from_user.id not in admins:
+                    # Also allow authorized users
                     try:
                         auth_users_dict = await get_authuser_names(message.chat.id)
                         auth_ids = [int(uid) for uid in auth_users_dict.keys()]
@@ -120,6 +116,7 @@ def PlayWrapper(command):
                     if message.from_user.id not in auth_ids:
                         return await message.reply_text(_["raw_4"])
         else:
+            # Normal play commands — respect playtype setting
             if playty != "Everyone":
                 if message.from_user.id not in SUDOERS:
                     admins = adminlist.get(message.chat.id)
@@ -154,10 +151,19 @@ def PlayWrapper(command):
                     get.status == ChatMemberStatus.BANNED
                     or get.status == ChatMemberStatus.RESTRICTED
                 ):
+                    unban_markup = InlineKeyboardMarkup([
+                        [
+                            InlineKeyboardButton(
+                                text="🔓 Unban Assistant",
+                                callback_data=f"unban_assistant {chat_id}|{userbot.id}",
+                            )
+                        ]
+                    ])
                     return await message.reply_text(
                         _["call_2"].format(
                             app.mention, userbot.id, userbot.name, userbot.username
-                        )
+                        ),
+                        reply_markup=unban_markup,
                     )
             except UserNotParticipant:
                 if chat_id in links:

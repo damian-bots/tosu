@@ -1,9 +1,3 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║        Copyright © tusar404 — All Rights Reserved               ║
-# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
-# ║        Unauthorized copying or distribution is prohibited        ║
-# ╚══════════════════════════════════════════════════════════════════╝
-
 """
 compat.py
 ~~~~~~~~~
@@ -13,6 +7,7 @@ Root cause
 ----------
 py-tgcalls 0.9.7 reads `update.chat_id` on every `UpdateGroupCall` TL object:
 
+    # pytgcalls/mtproto/pyrogram_client.py, line 97
     chat_id = self.chat_id(data2[update.chat_id])
 
 Kurigram 2.2.23 removed the `chat_id` shortcut and uses `update.peer`
@@ -39,6 +34,7 @@ def _apply():
         _LOG.warning("[compat] pyrogram not importable — skipping patch")
         return
 
+    # If the attribute already exists as a real slot/field, nothing to do.
     if "chat_id" in UpdateGroupCall.__dict__:
         _LOG.debug("[compat] UpdateGroupCall.chat_id already present — skipping patch")
         return
@@ -50,6 +46,7 @@ def _apply():
             """Return the integer peer id that pytgcalls expects."""
             peer = getattr(self, "peer", None)
             if peer is None:
+                # Some builds put peer inside the nested Call object.
                 call = getattr(self, "call", None)
                 peer = getattr(call, "peer", None) if call else None
             if isinstance(peer, PeerChannel):

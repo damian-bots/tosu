@@ -1,14 +1,8 @@
-# ╔══════════════════════════════════════════════════════════════════╗
-# ║        Copyright © tusar404 — All Rights Reserved               ║
-# ║     AnonXMusic · Telegram Music Bot · Powered by PyTgCalls      ║
-# ║        Unauthorized copying or distribution is prohibited        ║
-# ╚══════════════════════════════════════════════════════════════════╝
-
 import time
 
 from pyrogram import filters
 from pyrogram.enums import ChatType
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from pyrogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from youtubesearchpython.__future__ import VideosSearch
 
 import config
@@ -25,7 +19,13 @@ from AnonXMusic.utils.database import (
 )
 from AnonXMusic.utils.decorators.language import LanguageStart
 from AnonXMusic.utils.formatters import get_readable_time
-from AnonXMusic.utils.inline import help_pannel, private_panel, start_panel
+from AnonXMusic.utils.inline import (
+    guide_back_markup,
+    help_pannel,
+    private_panel,
+    start_panel,
+    welcome_panel,
+)
 from config import BANNED_USERS
 from strings import get_string
 
@@ -99,6 +99,7 @@ async def start_pm(client, message: Message, _):
     await message.reply_photo(
         photo=config.START_IMG_URL,
         caption=_["start_2"].format(message.from_user.mention, app.mention),
+        effect_id=5159385139981059251,
         reply_markup=InlineKeyboardMarkup(private_panel(_)),
     )
     if await is_on_off(2):
@@ -158,9 +159,8 @@ async def welcome(client, message: Message):
                     message.from_user.first_name,
                     app.mention,
                     message.chat.title,
-                    app.mention,
                 ),
-                reply_markup=InlineKeyboardMarkup(start_panel(_)),
+                reply_markup=InlineKeyboardMarkup(welcome_panel(_)),
                 disable_web_page_preview=True,
             )
             await add_served_chat(message.chat.id)
@@ -168,3 +168,47 @@ async def welcome(client, message: Message):
 
         except Exception as ex:
             print(ex)
+
+@app.on_callback_query(filters.regex("setup_guide_helper") & ~BANNED_USERS)
+async def setup_guide_cb(client, query: CallbackQuery):
+    language = await get_lang(query.message.chat.id)
+    _ = get_string(language)
+    try:
+        await query.answer()
+    except Exception:
+        pass
+    if query.message.photo:
+        await query.edit_message_caption(
+            caption=_["guide_1"].format(app.mention),
+            reply_markup=guide_back_markup(_),
+        )
+    else:
+        await query.edit_message_text(
+            text=_["guide_1"].format(app.mention),
+            reply_markup=guide_back_markup(_),
+            disable_web_page_preview=True,
+        )
+
+@app.on_callback_query(filters.regex("start_back_helper") & ~BANNED_USERS)
+async def start_back_cb(client, query: CallbackQuery):
+    language = await get_lang(query.message.chat.id)
+    _ = get_string(language)
+    try:
+        await query.answer()
+    except Exception:
+        pass
+    if query.message.photo:
+        await query.edit_message_caption(
+            caption=_["start_2"].format(query.from_user.mention, app.mention),
+            reply_markup=InlineKeyboardMarkup(private_panel(_)),
+        )
+    else:
+        await query.edit_message_text(
+            text=_["start_3"].format(
+                query.from_user.first_name,
+                app.mention,
+                query.message.chat.title,
+            ),
+            reply_markup=InlineKeyboardMarkup(welcome_panel(_)),
+            disable_web_page_preview=True,
+        )
