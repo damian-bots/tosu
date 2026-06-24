@@ -11,7 +11,6 @@ import json
 import os
 import re
 import time
-import traceback
 from functools import partial
 
 from pyrogram import filters
@@ -210,9 +209,7 @@ async def run_broadcast(state: dict, targets: list, status_msg=None):
                 FAILED_IDS.add(chat_id)
                 failed_count += 1
 
-            except Exception as e:
-                LOG.error(f"[Broadcast] Delivery error to {chat_id}: {e}\n"
-                          + traceback.format_exc())
+            except Exception:
                 failed_count += 1
 
         i = 0
