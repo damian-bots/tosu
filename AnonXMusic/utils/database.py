@@ -65,7 +65,10 @@ async def get_search_cache(query: str):
             "url": doc.get("url")
         }
         if len(search_cache) > 5000:
-            search_cache.clear()
+            # Evict oldest 20% instead of clearing all (avoids memory spike)
+            to_remove = list(search_cache.keys())[:1000]
+            for k in to_remove:
+                search_cache.pop(k, None)
         search_cache[query_key] = data
         return data
         
@@ -76,7 +79,9 @@ async def set_search_cache(query: str, data: dict):
     query_key = query.lower().strip()
     
     if len(search_cache) > 5000:
-        search_cache.clear()
+        to_remove = list(search_cache.keys())[:1000]
+        for k in to_remove:
+            search_cache.pop(k, None)
     search_cache[query_key] = data
     
     await searchdb.update_one(
@@ -174,8 +179,17 @@ async def set_calls_assistant(chat_id):
     return ran_assistant
 
 
-async def group_assistant(self, chat_id: int) -> int:
+async def group_assistant(self, chat_id: int):
+    """
+    Return the PyTgCalls client assigned to this chat.
+    Fixed: raises AssistantErr (not silent None) if no valid assistant is found.
+    This prevents 'No active video chat found' from cascading into AttributeError.
+    """
     from AnonXMusic.core.userbot import assistants
+    from AnonXMusic.utils.exceptions import AssistantErr
+
+    if not assistants:
+        raise AssistantErr("No assistants are configured or started.")
 
     assistant = assistantdict.get(chat_id)
     if not assistant:
@@ -186,7 +200,6 @@ async def group_assistant(self, chat_id: int) -> int:
             assis = dbassistant["assistant"]
             if assis in assistants:
                 assistantdict[chat_id] = assis
-                assis = assis
             else:
                 assis = await set_calls_assistant(chat_id)
     else:
@@ -194,16 +207,15 @@ async def group_assistant(self, chat_id: int) -> int:
             assis = assistant
         else:
             assis = await set_calls_assistant(chat_id)
-    if int(assis) == 1:
-        return self.one
-    elif int(assis) == 2:
-        return self.two
-    elif int(assis) == 3:
-        return self.three
-    elif int(assis) == 4:
-        return self.four
-    elif int(assis) == 5:
-        return self.five
+
+    client_map = {1: self.one, 2: self.two, 3: self.three, 4: self.four, 5: self.five}
+    client = client_map.get(int(assis))
+    if client is None:
+        raise AssistantErr(
+            f"Assistant #{assis} is not available. "
+            "Check that you have configured the correct STRING variable."
+        )
+    return client
 
 
 async def is_skipmode(chat_id: int) -> bool:

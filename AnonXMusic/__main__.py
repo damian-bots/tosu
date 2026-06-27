@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import sys
 
 from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
@@ -12,6 +13,14 @@ from AnonXMusic.plugins import ALL_MODULES
 from AnonXMusic.utils.database import get_banned_users, get_gbanned
 from config import BANNED_USERS
 
+# ── uvloop for better async performance ──────────────────────────────────────
+try:
+    import uvloop
+    uvloop.install()
+    LOGGER(__name__).info("uvloop installed — async performance boost active")
+except ImportError:
+    LOGGER(__name__).warning("uvloop not found, using default asyncio event loop")
+
 
 async def init():
     if (
@@ -23,7 +32,9 @@ async def init():
     ):
         LOGGER(__name__).error("Assistant client variables not defined, exiting...")
         exit()
+
     await sudo()
+
     try:
         users = await get_gbanned()
         for user_id in users:
@@ -31,24 +42,30 @@ async def init():
         users = await get_banned_users()
         for user_id in users:
             BANNED_USERS.add(user_id)
-    except:
+    except Exception:
         pass
+
     await app.start()
+
     for all_module in ALL_MODULES:
         importlib.import_module("AnonXMusic.plugins" + all_module)
     LOGGER("AnonXMusic.plugins").info("Successfully Imported Modules...")
+
     await userbot.start()
     await Anony.start()
+
     try:
         await Anony.stream_call("https://te.legra.ph/file/29f784eb49d230ab62e9e.mp4")
     except NoActiveGroupCall:
         LOGGER("AnonXMusic").error(
-            "Please turn on the videochat of your log group\channel.\n\nStopping Bot..."
+            "Please turn on the videochat of your log group/channel.\n\nStopping Bot..."
         )
         exit()
-    except:
+    except Exception:
         pass
+
     await Anony.decorators()
+
     LOGGER("AnonXMusic").info(
         "\x4a\x6f\x69\x6e\x20\x40\x41\x72\x63\x55\x70\x64\x61\x74\x65\x73"
     )
@@ -59,4 +76,4 @@ async def init():
 
 
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(init())
+    asyncio.run(init())
