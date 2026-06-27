@@ -13,15 +13,6 @@ from AnonXMusic.plugins import ALL_MODULES
 from AnonXMusic.utils.database import get_banned_users, get_gbanned
 from config import BANNED_USERS
 
-# ── uvloop for better async performance ──────────────────────────────────────
-try:
-    import uvloop
-    uvloop.install()
-    LOGGER(__name__).info("uvloop installed — async performance boost active")
-except ImportError:
-    LOGGER(__name__).warning("uvloop not found, using default asyncio event loop")
-
-
 async def init():
     if (
         not config.STRING1
