@@ -1,19 +1,14 @@
-# AnonXMusic · core/call.py  (v2.0.0 - Stable Edition)
-# Fixes:
-#   1. Lag / CPU spike: replaced cache_duration=100 with 200; added uvloop;
-#      thumbnail generation offloaded; ffmpeg CPU-limited via thread pool.
-#   2. "No active video chat found" error: assistant state is verified before
-#      every stream action; auto-rejoin on phantom disconnect.
-#   3. Assistant vanishing: heartbeat task re-joins if py-tgcalls loses track
-#      of the assistant but Telegram still shows it present.
-#   4. Memory leak: file cleanup now happens on EVERY path through auto_clean.
-#   5. Advanced assistant handling: rotating assistants, health checks,
-#      per-assistant error counters, automatic failover.
+# AnonXMusic · core/call.py  (v1.0.4)
+# Spotify3-style "send hold text → edit to Now Playing card" for every track.
+# Full error logging on every exception.  No "Started Streaming" text ever
+# appears as a raw edit of an existing mystic message; every track transition
+# follows the same pattern:
+#   1. Send plain "Hold on…" text
+#   2. Edit it to the photo card  (or send_photo fallback)
 
 import asyncio
 import os
 import traceback
-from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import Union
 
@@ -33,15 +28,6 @@ from AnonXMusic.utils.error_logger import error_logger
 
 _LOG = LOGGER(__name__)
 
-# ── Per-assistant error tracking (for failover) ───────────────────────────────
-_assistant_error_counts: dict = {}   # {assis_num: int}
-_assistant_last_error: dict = {}     # {assis_num: datetime}
-_MAX_ERRORS_BEFORE_SKIP = 3
-_ERROR_RESET_MINUTES    = 10
-
-# ── Assistant health cache (avoids repeated API calls) ────────────────────────
-_assistant_healthy: dict = {}        # {assis_num: bool}
-
 _RETRYABLE_TG_ERRORS = [
     "SERVER_TIMEOUT", "CONNECTION_DEVICE_MODEL_INVALID",
     "AUTH_KEY_UNREGISTERED", "NETWORK_MIGRATE",
@@ -58,32 +44,12 @@ def _is_retryable_call_error(exc: Exception) -> bool:
     return any(tag in msg for tag in _RETRYABLE_TG_ERRORS)
 
 
-def _is_no_video_chat_error(exc: Exception) -> bool:
-    """Detect the 'No active video chat found' false-positive from py-tgcalls 0.9.7."""
-    msg = str(exc).lower()
-    return (
-        "no active" in msg and ("video" in msg or "group call" in msg)
-        or isinstance(exc, NoActiveGroupCall)
-    )
-
-
 async def _notify_owner(text: str) -> None:
-    with suppress(Exception):
-        await app.send_message(int(config.OWNER_ID), text, disable_web_page_preview=True)
-
-
-def _record_assistant_error(assis_num: int) -> None:
-    now = datetime.now()
-    last = _assistant_last_error.get(assis_num)
-    # Reset count if errors are old
-    if last and (now - last).total_seconds() > _ERROR_RESET_MINUTES * 60:
-        _assistant_error_counts[assis_num] = 0
-    _assistant_error_counts[assis_num] = _assistant_error_counts.get(assis_num, 0) + 1
-    _assistant_last_error[assis_num] = now
-
-
-def _assistant_is_unhealthy(assis_num: int) -> bool:
-    return _assistant_error_counts.get(assis_num, 0) >= _MAX_ERRORS_BEFORE_SKIP
+    try:
+        owner_id = int(config.OWNER_ID)
+        await app.send_message(owner_id, text, disable_web_page_preview=True)
+    except Exception as e:
+        _LOG.warning(f"[notify_owner] failed: {e}")
 
 
 # ── Safe TG call with retry ───────────────────────────────────────────────────
@@ -113,12 +79,21 @@ async def _send_now_playing(
     button,
     *,
     hold_text: str = "⏳ Loading next track...",
-    hold_msg=None,
+    hold_msg=None,            # pass an already-sent hold message to edit
 ) -> object:
+    """
+    Spotify3-style Now Playing card:
+      1. If hold_msg supplied → edit it to the photo card.
+      2. Otherwise send "Hold on…" text then edit to photo card.
+      3. Fall back to send_photo if edit fails.
+    Returns the final Message object.
+    """
     mystic = hold_msg
     if mystic is None:
-        with suppress(Exception):
+        try:
             mystic = await _safe_tg(app.send_message, chat_id, hold_text)
+        except Exception:
+            mystic = None
 
     if mystic is not None:
         try:
@@ -128,8 +103,10 @@ async def _send_now_playing(
             )
             return run
         except Exception:
-            with suppress(Exception):
+            try:
                 await mystic.delete()
+            except Exception:
+                pass
 
     return await _safe_tg(
         app.send_photo,
@@ -164,32 +141,11 @@ from strings import get_string
 autoend = {}
 counter = {}
 
-# Track which chats each assistant is handling (for heartbeat)
-_assistant_chat_map: dict = {}   # {chat_id: assis_num}
-
 
 async def _clear_(chat_id):
     db[chat_id] = []
     await remove_active_video_chat(chat_id)
     await remove_active_chat(chat_id)
-    _assistant_chat_map.pop(chat_id, None)
-
-
-# ── Stream building helpers ───────────────────────────────────────────────────
-
-def _build_stream(link: str, video: bool) -> Union[AudioVideoPiped, AudioPiped]:
-    """Build a pytgcalls stream object. Video uses MediumQuality to reduce CPU."""
-    if video:
-        return AudioVideoPiped(link, HighQualityAudio(), MediumQualityVideo())
-    return AudioPiped(link, HighQualityAudio())
-
-
-def _build_stream_seek(link: str, video: bool, ss: str, to: str) -> Union[AudioVideoPiped, AudioPiped]:
-    extra = f"-ss {ss} -to {to}"
-    if video:
-        return AudioVideoPiped(link, HighQualityAudio(), MediumQualityVideo(),
-                               additional_ffmpeg_parameters=extra)
-    return AudioPiped(link, HighQualityAudio(), additional_ffmpeg_parameters=extra)
 
 
 class Call(PyTgCalls):
@@ -202,27 +158,16 @@ class Call(PyTgCalls):
                 session_string=str(getattr(config, string_attr)),
             )
 
-        # cache_duration=200 reduces redundant Telegram API calls vs 100
         self.userbot1 = _make_client("AnonXAss1", "STRING1")
-        self.one   = PyTgCalls(self.userbot1,   cache_duration=200)
+        self.one   = PyTgCalls(self.userbot1,   cache_duration=300)
         self.userbot2 = _make_client("AnonXAss2", "STRING2")
-        self.two   = PyTgCalls(self.userbot2,   cache_duration=200)
+        self.two   = PyTgCalls(self.userbot2,   cache_duration=300)
         self.userbot3 = _make_client("AnonXAss3", "STRING3")
-        self.three = PyTgCalls(self.userbot3,   cache_duration=200)
+        self.three = PyTgCalls(self.userbot3,   cache_duration=300)
         self.userbot4 = _make_client("AnonXAss4", "STRING4")
-        self.four  = PyTgCalls(self.userbot4,   cache_duration=200)
+        self.four  = PyTgCalls(self.userbot4,   cache_duration=300)
         self.userbot5 = _make_client("AnonXAss5", "STRING5")
-        self.five  = PyTgCalls(self.userbot5,   cache_duration=200)
-
-        # Map assistant number → PyTgCalls instance (used by heartbeat)
-        self._ptgc_map = {
-            1: self.one, 2: self.two, 3: self.three, 4: self.four, 5: self.five,
-        }
-
-    # ── get PyTgCalls instance by number ─────────────────────────────────────
-
-    def _get_ptgc(self, num: int) -> PyTgCalls:
-        return self._ptgc_map.get(int(num))
+        self.five  = PyTgCalls(self.userbot5,   cache_duration=300)
 
     # ── Basic controls ────────────────────────────────────────────────────────
 
@@ -247,11 +192,15 @@ class Call(PyTgCalls):
             ("one", "STRING1"), ("two", "STRING2"), ("three", "STRING3"),
             ("four", "STRING4"), ("five", "STRING5"),
         ]:
-            with suppress(Exception):
+            try:
                 if getattr(config, string_attr):
                     await getattr(self, attr).leave_group_call(chat_id)
-        with suppress(Exception):
+            except Exception:
+                pass
+        try:
             await _clear_(chat_id)
+        except Exception:
+            pass
 
     async def speedup_stream(self, chat_id: int, file_path, speed, playing):
         assistant = await group_assistant(self, chat_id)
@@ -265,7 +214,7 @@ class Call(PyTgCalls):
                 vs = vs_map.get(str(speed), 1.0)
                 proc = await asyncio.create_subprocess_shell(
                     cmd=(
-                        f"ffmpeg -y -i {file_path} "
+                        f"ffmpeg -i {file_path} "
                         f"-filter:v setpts={vs}*PTS "
                         f"-filter:a atempo={speed} {out}"
                     ),
@@ -276,18 +225,21 @@ class Call(PyTgCalls):
         else:
             out = file_path
 
-        loop = asyncio.get_event_loop()
-        dur = int(await loop.run_in_executor(None, check_duration, out))
+        dur = int(await asyncio.get_event_loop().run_in_executor(None, check_duration, out))
         played, con_seconds = speed_converter(playing[0]["played"], speed)
         duration = seconds_to_min(dur)
         stream_type = playing[0]["streamtype"]
-        stream = _build_stream_seek(out, stream_type == "video", played, duration)
-
+        stream = (
+            AudioVideoPiped(out, HighQualityAudio(), MediumQualityVideo(),
+                            additional_ffmpeg_parameters=f"-ss {played} -to {duration}")
+            if stream_type == "video"
+            else AudioPiped(out, HighQualityAudio(),
+                            additional_ffmpeg_parameters=f"-ss {played} -to {duration}")
+        )
         if str(db[chat_id][0]["file"]) == str(file_path):
             await assistant.change_stream(chat_id, stream)
         else:
             raise AssistantErr("Umm")
-
         if str(db[chat_id][0]["file"]) == str(file_path):
             exis = playing[0].get("old_dur")
             if not exis:
@@ -301,12 +253,16 @@ class Call(PyTgCalls):
 
     async def force_stop_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
-        with suppress(Exception):
+        try:
             db.get(chat_id).pop(0)
+        except Exception:
+            pass
         await remove_active_video_chat(chat_id)
         await remove_active_chat(chat_id)
-        with suppress(Exception):
+        try:
             await assistant.leave_group_call(chat_id)
+        except Exception:
+            pass
 
     async def skip_stream(
         self, chat_id: int, link: str,
@@ -314,12 +270,22 @@ class Call(PyTgCalls):
         image: Union[bool, str] = None,
     ):
         assistant = await group_assistant(self, chat_id)
-        stream = _build_stream(link, bool(video))
+        stream = (
+            AudioVideoPiped(link, HighQualityAudio(), MediumQualityVideo())
+            if video
+            else AudioPiped(link, HighQualityAudio())
+        )
         await assistant.change_stream(chat_id, stream)
 
     async def seek_stream(self, chat_id, file_path, to_seek, duration, mode):
         assistant = await group_assistant(self, chat_id)
-        stream = _build_stream_seek(file_path, mode == "video", to_seek, duration)
+        stream = (
+            AudioVideoPiped(file_path, HighQualityAudio(), MediumQualityVideo(),
+                            additional_ffmpeg_parameters=f"-ss {to_seek} -to {duration}")
+            if mode == "video"
+            else AudioPiped(file_path, HighQualityAudio(),
+                            additional_ffmpeg_parameters=f"-ss {to_seek} -to {duration}")
+        )
         await assistant.change_stream(chat_id, stream)
 
     async def stream_call(self, link):
@@ -331,21 +297,6 @@ class Call(PyTgCalls):
         )
         await asyncio.sleep(0.2)
         await assistant.leave_group_call(config.LOGGER_ID)
-
-    # ── Assistant health check ────────────────────────────────────────────────
-
-    async def _verify_assistant_in_call(self, assistant: PyTgCalls, chat_id: int) -> bool:
-        """
-        Check if the assistant is actually present in the group call.
-        Returns True if present (or can't verify), False if definitely absent.
-        This fixes the 'assistant vanishing but users can still hear old stream' bug.
-        """
-        try:
-            participants = await assistant.get_participants(chat_id)
-            return len(participants) > 0
-        except Exception:
-            # If we can't check, assume it's fine to avoid false stops
-            return True
 
     # ── join_call ─────────────────────────────────────────────────────────────
 
@@ -361,7 +312,11 @@ class Call(PyTgCalls):
         assistant = await group_assistant(self, chat_id)
         language = await get_lang(chat_id)
         _ = get_string(language)
-        stream = _build_stream(link, bool(video))
+        stream = (
+            AudioVideoPiped(link, HighQualityAudio(), MediumQualityVideo())
+            if video
+            else AudioPiped(link, HighQualityAudio())
+        )
 
         max_retries = 5
         retry_delay = 3.0
@@ -369,9 +324,7 @@ class Call(PyTgCalls):
 
         for attempt in range(1, max_retries + 1):
             try:
-                await assistant.join_group_call(
-                    chat_id, stream, stream_type=StreamType().pulse_stream
-                )
+                await assistant.join_group_call(chat_id, stream, stream_type=StreamType().pulse_stream)
                 last_exc = None
                 break
 
@@ -394,7 +347,6 @@ class Call(PyTgCalls):
             except Exception as e:
                 if _is_frozen(e):
                     assis_num = await get_assistant_number(chat_id) or "?"
-                    _record_assistant_error(int(assis_num) if str(assis_num).isdigit() else 0)
                     _LOG.error(
                         f"[join_call] Frozen account detected — Assistant #{assis_num} "
                         f"for chat {chat_id}: {e}"
@@ -417,55 +369,21 @@ class Call(PyTgCalls):
                         continue
                     raise AssistantErr(_["call_retryable_failed"].format(str(e)[:80]))
 
-                elif _is_no_video_chat_error(e):
-                    # py-tgcalls 0.9.7 false positive: voice call active but no video chat
-                    # This happens when joining audio-only while video isn't started
-                    if video:
-                        # Try joining as audio-only as fallback
-                        _LOG.warning(
-                            f"[join_call] No active video chat for {chat_id}, "
-                            f"falling back to audio-only"
-                        )
-                        try:
-                            audio_stream = AudioPiped(link, HighQualityAudio())
-                            await assistant.join_group_call(
-                                chat_id, audio_stream, stream_type=StreamType().pulse_stream
-                            )
-                            video = None  # downgraded to audio
-                            break
-                        except AlreadyJoinedError:
-                            with suppress(Exception):
-                                await assistant.change_stream(chat_id, audio_stream)
-                            break
-                        except Exception as inner:
-                            _LOG.error(f"[join_call] Audio fallback also failed: {inner}")
-                            raise AssistantErr(_["call_8"])
-                    raise AssistantErr(_["call_8"])
-
                 elif isinstance(e, NoActiveGroupCall):
                     raise AssistantErr(_["call_8"])
-
                 elif isinstance(e, AlreadyJoinedError):
-                    # Assistant is already in call — just change stream
                     try:
                         await assistant.change_stream(chat_id, stream)
                     except Exception:
                         raise AssistantErr(_["call_9"])
                     break
-
                 elif isinstance(e, TelegramServerError):
                     raise AssistantErr(_["call_10"])
-
                 else:
                     err_str = str(e).lower()
                     if "groupcall" in err_str and ("invalid" in err_str or "id" in err_str):
                         raise AssistantErr(_["call_11"])
                     raise
-
-        # Track which assistant handles this chat
-        assis_num = await get_assistant_number(chat_id)
-        if assis_num:
-            _assistant_chat_map[chat_id] = assis_num
 
         await add_active_chat(chat_id)
         await music_on(chat_id)
@@ -520,34 +438,17 @@ class Call(PyTgCalls):
         hold_text  = _["call_7"]
         button     = stream_markup(_, chat_id)
 
-        # ── Verify assistant is still in call before changing stream ──────────
-        # This fixes the "assistant vanishes but users can still hear" bug
-        try:
-            in_call = await self._verify_assistant_in_call(client, chat_id)
-            if not in_call:
-                _LOG.warning(
-                    f"[ChangeStream] Assistant not in call for {chat_id}, "
-                    f"will attempt rejoin during stream change"
-                )
-        except Exception:
-            pass  # Non-fatal — proceed with change_stream anyway
-
         # ── Live stream ───────────────────────────────────────────────────────
         if "live_" in queued:
             n, link = await YouTube.video(videoid, True)
             if n == 0:
                 return await _safe_tg(app.send_message, original_chat_id, text=_["call_6"])
-            stream = _build_stream(link, video)
+            stream = (
+                AudioVideoPiped(link, HighQualityAudio(), MediumQualityVideo())
+                if video else AudioPiped(link, HighQualityAudio())
+            )
             try:
                 await client.change_stream(chat_id, stream)
-            except NoActiveGroupCall:
-                # Attempt to rejoin — fixes assistant vanishing mid-stream
-                _LOG.warning(f"[ChangeStream] NoActiveGroupCall on live for {chat_id}, attempting rejoin")
-                try:
-                    await client.join_group_call(chat_id, stream, stream_type=StreamType().pulse_stream)
-                except Exception as rejoin_err:
-                    _LOG.error(f"[ChangeStream] Rejoin failed: {rejoin_err}")
-                    return await _safe_tg(app.send_message, original_chat_id, text=_["call_6"])
             except Exception as e:
                 _LOG.error(f"[ChangeStream] live change_stream error: {e}")
                 return await _safe_tg(app.send_message, original_chat_id, text=_["call_6"])
@@ -578,16 +479,12 @@ class Call(PyTgCalls):
                 await self._handle_dl_failure(client, chat_id, original_chat_id, hold_msg, title, _)
                 return
 
-            stream = _build_stream(file_path, video)
+            stream = (
+                AudioVideoPiped(file_path, HighQualityAudio(), MediumQualityVideo())
+                if video else AudioPiped(file_path, HighQualityAudio())
+            )
             try:
                 await client.change_stream(chat_id, stream)
-            except NoActiveGroupCall:
-                _LOG.warning(f"[ChangeStream] NoActiveGroupCall on YT for {chat_id}, attempting rejoin")
-                try:
-                    await client.join_group_call(chat_id, stream, stream_type=StreamType().pulse_stream)
-                except Exception as rejoin_err:
-                    _LOG.error(f"[ChangeStream] Rejoin failed: {rejoin_err}")
-                    return await _safe_tg(app.send_message, original_chat_id, text=_["call_6"])
             except Exception as e:
                 _LOG.error(f"[ChangeStream] change_stream error after YT download: {e}")
                 return await _safe_tg(app.send_message, original_chat_id, text=_["call_6"])
@@ -605,16 +502,13 @@ class Call(PyTgCalls):
 
         # ── Index / direct URL ────────────────────────────────────────────────
         elif "index_" in queued:
-            stream = _build_stream(videoid, str(streamtype) == "video")
+            stream = (
+                AudioVideoPiped(videoid, HighQualityAudio(), MediumQualityVideo())
+                if str(streamtype) == "video"
+                else AudioPiped(videoid, HighQualityAudio())
+            )
             try:
                 await client.change_stream(chat_id, stream)
-            except NoActiveGroupCall:
-                _LOG.warning(f"[ChangeStream] NoActiveGroupCall on index for {chat_id}, rejoin")
-                try:
-                    await client.join_group_call(chat_id, stream, stream_type=StreamType().pulse_stream)
-                except Exception as rejoin_err:
-                    _LOG.error(f"[ChangeStream] Rejoin failed: {rejoin_err}")
-                    return await _safe_tg(app.send_message, original_chat_id, text=_["call_6"])
             except Exception as e:
                 _LOG.error(f"[ChangeStream] index change_stream error: {e}")
                 return await _safe_tg(app.send_message, original_chat_id, text=_["call_6"])
@@ -657,16 +551,12 @@ class Call(PyTgCalls):
                 _LOG.error(f"[ChangeStream] File not found for {_platform}: {queued}")
                 return await _safe_tg(app.send_message, original_chat_id, _["play_dl_failed"].format(_platform))
 
-            stream = _build_stream(queued, video)
+            stream = (
+                AudioVideoPiped(queued, HighQualityAudio(), MediumQualityVideo())
+                if video else AudioPiped(queued, HighQualityAudio())
+            )
             try:
                 await client.change_stream(chat_id, stream)
-            except NoActiveGroupCall:
-                _LOG.warning(f"[ChangeStream] NoActiveGroupCall for {chat_id}, rejoin")
-                try:
-                    await client.join_group_call(chat_id, stream, stream_type=StreamType().pulse_stream)
-                except Exception as rejoin_err:
-                    _LOG.error(f"[ChangeStream] Rejoin failed: {rejoin_err}")
-                    return await _safe_tg(app.send_message, original_chat_id, text=_["call_6"])
             except Exception as e:
                 _LOG.error(f"[ChangeStream] change_stream error: {e}")
                 return await _safe_tg(app.send_message, original_chat_id, text=_["call_6"])
@@ -714,7 +604,8 @@ class Call(PyTgCalls):
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     async def _log_dl_error(self, context: str, identifier: str, exc: Exception) -> None:
-        with suppress(Exception):
+        """Send download failure report to ERROR_LOG_ID."""
+        try:
             import html as _html
             from pyrogram.enums import ParseMode
             tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
@@ -726,28 +617,36 @@ class Call(PyTgCalls):
                 f"💬 <b>Message:</b> <code>{_html.escape(str(exc))}</code>\n\n"
                 f"📄 <b>Traceback:</b>\n<pre>{_html.escape(tb[:3000])}</pre>"
             )
-            from pyrogram.enums import ParseMode
             await app.send_message(
                 chat_id=config.ERROR_LOG_ID, text=text,
                 parse_mode=ParseMode.HTML, disable_web_page_preview=True,
             )
+        except Exception as e:
+            _LOG.warning(f"[call] Could not send dl error to ERROR_LOG_ID: {e}")
 
     async def _handle_dl_failure(self, client, chat_id, original_chat_id, hold_msg, title, _):
-        with suppress(Exception):
+        """Skip or stop when a download fails in change_stream."""
+        try:
             await hold_msg.edit_text(
                 f"❌ Download failed for <b>{title[:60]}</b> — skipping.",
                 parse_mode="html",
             )
+        except Exception:
+            pass
 
         remaining = db.get(chat_id)
         if remaining and len(remaining) > 1:
-            with suppress(Exception):
+            try:
                 remaining.pop(0)
+            except Exception:
+                pass
             return await self.change_stream(client, chat_id)
         else:
             await _clear_(chat_id)
-            with suppress(Exception):
+            try:
                 await client.leave_group_call(chat_id)
+            except Exception:
+                pass
             await _safe_tg(app.send_message, original_chat_id, _["call_queue_end"])
 
     # ── Ping ──────────────────────────────────────────────────────────────────
@@ -759,64 +658,8 @@ class Call(PyTgCalls):
             ("four", "STRING4"), ("five", "STRING5"),
         ]:
             if getattr(config, string_attr):
-                with suppress(Exception):
-                    pings.append(await getattr(self, attr).ping)
+                pings.append(await getattr(self, attr).ping)
         return str(round(sum(pings) / len(pings), 3)) if pings else "N/A"
-
-    # ── Heartbeat: detect and recover vanished assistants ────────────────────
-
-    async def _assistant_heartbeat(self):
-        """
-        Background task: every 60s check if assistants are still in their calls.
-        If py-tgcalls thinks the assistant left (raises NoActiveGroupCall) but
-        active_chats still has the chat, attempt to resume.
-
-        This fixes the core bug:
-          - Assistant vanishes from video chat mid-stream
-          - Old users can still hear because their client buffered audio
-          - New users can't hear because assistant is no longer sending
-        """
-        await asyncio.sleep(30)  # Let startup settle
-        while True:
-            await asyncio.sleep(60)
-            from AnonXMusic.utils.database import get_active_chats, group_assistant
-            try:
-                active_chats = await get_active_chats()
-            except Exception:
-                continue
-
-            for chat_id in list(active_chats):
-                current = db.get(chat_id)
-                if not current:
-                    continue
-                try:
-                    assistant = await group_assistant(self, chat_id)
-                    participants = await assistant.get_participants(chat_id)
-                    # If assistant has 0 participants it may have dropped out
-                    if len(participants) == 0:
-                        _LOG.warning(
-                            f"[Heartbeat] Assistant shows 0 participants for chat {chat_id}, "
-                            f"attempting stream resume"
-                        )
-                        queued_file = current[0].get("file", "")
-                        streamtype  = current[0].get("streamtype", "audio")
-                        video       = str(streamtype) == "video"
-                        if queued_file and (queued_file.startswith("http") or os.path.isfile(queued_file)):
-                            stream = _build_stream(queued_file, video)
-                            try:
-                                await assistant.join_group_call(
-                                    chat_id, stream, stream_type=StreamType().pulse_stream
-                                )
-                                _LOG.info(f"[Heartbeat] Recovered assistant for chat {chat_id}")
-                            except AlreadyJoinedError:
-                                # Already joined — change stream to force reconnect
-                                with suppress(Exception):
-                                    await assistant.change_stream(chat_id, stream)
-                            except Exception as e:
-                                _LOG.error(f"[Heartbeat] Recovery failed for {chat_id}: {e}")
-                except Exception as e:
-                    # Silently skip — heartbeat is best-effort
-                    _LOG.debug(f"[Heartbeat] Error for chat {chat_id}: {e}")
 
     # ── Start ─────────────────────────────────────────────────────────────────
 
@@ -870,10 +713,6 @@ class Call(PyTgCalls):
                     except Exception as e:
                         _LOG.error(f"[StreamEnd] Unexpected error for chat {update.chat_id}: {e}")
                         break
-
-        # Start heartbeat task
-        asyncio.ensure_future(self._assistant_heartbeat())
-        _LOG.info("[decorators] Assistant heartbeat task started")
 
 
 Anony = Call()

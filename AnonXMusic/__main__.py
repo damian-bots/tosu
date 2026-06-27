@@ -2,6 +2,13 @@ import asyncio
 import importlib
 import sys
 
+# ── Use uvloop for significantly better async performance ────────────────────
+try:
+    import uvloop
+    uvloop.install()
+except ImportError:
+    pass
+
 from pyrogram import idle
 from pytgcalls.exceptions import NoActiveGroupCall
 
@@ -11,29 +18,26 @@ from AnonXMusic.core.call import Anony
 from AnonXMusic.misc import sudo
 from AnonXMusic.plugins import ALL_MODULES
 from AnonXMusic.utils.database import get_banned_users, get_gbanned
+from AnonXMusic.utils.sys import cleanup_downloads, cleanup_playback_cache
+from AnonXMusic.core.mongo import ensure_indexes
 from config import BANNED_USERS
 
-# ── uvloop for better async performance ──────────────────────────────────────
-try:
-    import uvloop
-    uvloop.install()
-    LOGGER(__name__).info("uvloop installed — async performance boost active")
-except ImportError:
-    LOGGER(__name__).warning("uvloop not found, using default asyncio event loop")
+_LOG = LOGGER(__name__)
 
 
 async def init():
-    if (
-        not config.STRING1
-        and not config.STRING2
-        and not config.STRING3
-        and not config.STRING4
-        and not config.STRING5
-    ):
-        LOGGER(__name__).error("Assistant client variables not defined, exiting...")
-        exit()
+    if not any([config.STRING1, config.STRING2, config.STRING3, config.STRING4, config.STRING5]):
+        _LOG.error("No assistant client string session defined — exiting.")
+        sys.exit(1)
 
     await sudo()
+
+    # Clean up stale downloads from previous runs
+    cleanup_downloads()
+    cleanup_playback_cache()
+
+    # Create MongoDB indexes for faster queries
+    await ensure_indexes()
 
     try:
         users = await get_gbanned()
@@ -42,37 +46,37 @@ async def init():
         users = await get_banned_users()
         for user_id in users:
             BANNED_USERS.add(user_id)
-    except Exception:
-        pass
+    except Exception as e:
+        _LOG.warning(f"Could not load ban lists: {e}")
 
     await app.start()
 
     for all_module in ALL_MODULES:
-        importlib.import_module("AnonXMusic.plugins" + all_module)
-    LOGGER("AnonXMusic.plugins").info("Successfully Imported Modules...")
+        try:
+            importlib.import_module("AnonXMusic.plugins" + all_module)
+        except Exception as e:
+            _LOG.error(f"Failed to import module {all_module}: {e}")
 
+    LOGGER("AnonXMusic.plugins").info("Modules imported.")
     await userbot.start()
     await Anony.start()
 
     try:
         await Anony.stream_call("https://te.legra.ph/file/29f784eb49d230ab62e9e.mp4")
     except NoActiveGroupCall:
-        LOGGER("AnonXMusic").error(
-            "Please turn on the videochat of your log group/channel.\n\nStopping Bot..."
+        _LOG.error(
+            "Please turn on the video chat of your log group/channel.\n\nStopping Bot..."
         )
-        exit()
+        sys.exit(1)
     except Exception:
         pass
 
     await Anony.decorators()
-
-    LOGGER("AnonXMusic").info(
-        "\x4a\x6f\x69\x6e\x20\x40\x41\x72\x63\x55\x70\x64\x61\x74\x65\x73"
-    )
+    _LOG.info("Bot is fully started and ready.")
     await idle()
     await app.stop()
     await userbot.stop()
-    LOGGER("AnonXMusic").info("Stopping AnonX Music Bot...")
+    _LOG.info("Bot stopped.")
 
 
 if __name__ == "__main__":

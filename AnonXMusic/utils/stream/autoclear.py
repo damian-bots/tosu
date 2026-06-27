@@ -5,38 +5,33 @@ from config import autoclean
 
 
 async def auto_clean(popped):
-    """
-    Clean up downloaded files that are no longer needed.
-    Fixed: properly handles all cases including speed_path files.
-    """
+    """Remove a downloaded file from disk if it is no longer referenced in autoclean."""
     if not popped:
         return
     try:
-        # Clean main file
-        rem = popped.get("file") or ""
-        _try_remove_file(rem)
+        rem = popped.get("file", "")
+        if not rem:
+            return
 
-        # Clean speed-adjusted file if present
-        speed_path = popped.get("speed_path") or ""
-        if speed_path and speed_path != rem:
-            _try_remove_file(speed_path)
+        # Remove this entry from the autoclean tracking list
+        try:
+            autoclean.remove(rem)
+        except ValueError:
+            pass
 
-    except Exception:
-        pass
+        # Only delete disk files — not stream marker strings or HTTP URLs
+        is_marker = any(tag in rem for tag in ("vid_", "live_", "index_"))
+        is_url    = rem.startswith("http://") or rem.startswith("https://")
 
+        if is_marker or is_url:
+            return
 
-def _try_remove_file(path: str) -> None:
-    """Remove a file from disk if it's safe to do so."""
-    if not path:
-        return
-    # Never remove URLs, in-memory markers, or special identifiers
-    if path.startswith(("http", "vid_", "live_", "index_", "yt_search_")):
-        return
-    try:
-        if path in autoclean:
-            autoclean.remove(path)
-        count = autoclean.count(path)
-        if count == 0 and os.path.isfile(path):
-            os.remove(path)
+        # If no more references in autoclean, delete the file
+        if rem not in autoclean:
+            if os.path.isfile(rem):
+                try:
+                    await asyncio.get_event_loop().run_in_executor(None, os.remove, rem)
+                except OSError:
+                    pass
     except Exception:
         pass

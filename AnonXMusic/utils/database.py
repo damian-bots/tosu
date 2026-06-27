@@ -26,8 +26,9 @@ statsdb = mongodb.bot_stats
 searchdb = mongodb.search_cache
 
 # Shifting to memory [mongo sucks often]
-active = []
-activevideo = []
+# NOTE: active/activevideo are sets for O(1) add/remove/lookup instead of O(n) lists.
+active: set = set()
+activevideo: set = set()
 assistantdict = {}
 autoend = {}
 count = {}
@@ -41,6 +42,8 @@ playmode = {}
 playtype = {}
 skipmode = {}
 search_cache = {}
+
+_SEARCH_CACHE_MAX = 2000  # Evict oldest entries when over this limit
 
 async def get_search_cache(query: str):
     if not query: return None
@@ -64,10 +67,9 @@ async def get_search_cache(query: str):
             "thumbnail": doc.get("thumbnail"),
             "url": doc.get("url")
         }
-        if len(search_cache) > 5000:
-            # Evict oldest 20% instead of clearing all (avoids memory spike)
-            to_remove = list(search_cache.keys())[:1000]
-            for k in to_remove:
+        if len(search_cache) >= _SEARCH_CACHE_MAX:
+            # Evict ~20% oldest entries (keys are insertion-ordered in Python 3.7+)
+            for k in list(search_cache.keys())[:_SEARCH_CACHE_MAX // 5]:
                 search_cache.pop(k, None)
         search_cache[query_key] = data
         return data
@@ -78,9 +80,8 @@ async def set_search_cache(query: str, data: dict):
     if not query or not data: return
     query_key = query.lower().strip()
     
-    if len(search_cache) > 5000:
-        to_remove = list(search_cache.keys())[:1000]
-        for k in to_remove:
+    if len(search_cache) >= _SEARCH_CACHE_MAX:
+        for k in list(search_cache.keys())[:_SEARCH_CACHE_MAX // 5]:
             search_cache.pop(k, None)
     search_cache[query_key] = data
     
@@ -179,17 +180,8 @@ async def set_calls_assistant(chat_id):
     return ran_assistant
 
 
-async def group_assistant(self, chat_id: int):
-    """
-    Return the PyTgCalls client assigned to this chat.
-    Fixed: raises AssistantErr (not silent None) if no valid assistant is found.
-    This prevents 'No active video chat found' from cascading into AttributeError.
-    """
+async def group_assistant(self, chat_id: int) -> int:
     from AnonXMusic.core.userbot import assistants
-    from AnonXMusic.utils.exceptions import AssistantErr
-
-    if not assistants:
-        raise AssistantErr("No assistants are configured or started.")
 
     assistant = assistantdict.get(chat_id)
     if not assistant:
@@ -200,6 +192,7 @@ async def group_assistant(self, chat_id: int):
             assis = dbassistant["assistant"]
             if assis in assistants:
                 assistantdict[chat_id] = assis
+                assis = assis
             else:
                 assis = await set_calls_assistant(chat_id)
     else:
@@ -207,15 +200,16 @@ async def group_assistant(self, chat_id: int):
             assis = assistant
         else:
             assis = await set_calls_assistant(chat_id)
-
-    client_map = {1: self.one, 2: self.two, 3: self.three, 4: self.four, 5: self.five}
-    client = client_map.get(int(assis))
-    if client is None:
-        raise AssistantErr(
-            f"Assistant #{assis} is not available. "
-            "Check that you have configured the correct STRING variable."
-        )
-    return client
+    if int(assis) == 1:
+        return self.one
+    elif int(assis) == 2:
+        return self.two
+    elif int(assis) == 3:
+        return self.three
+    elif int(assis) == 4:
+        return self.four
+    elif int(assis) == 5:
+        return self.five
 
 
 async def is_skipmode(chat_id: int) -> bool:
@@ -380,45 +374,35 @@ async def music_off(chat_id: int):
 
 
 async def get_active_chats() -> list:
-    return active
+    return list(active)
 
 
 async def is_active_chat(chat_id: int) -> bool:
-    if chat_id not in active:
-        return False
-    else:
-        return True
+    return chat_id in active
 
 
 async def add_active_chat(chat_id: int):
-    if chat_id not in active:
-        active.append(chat_id)
+    active.add(chat_id)
 
 
 async def remove_active_chat(chat_id: int):
-    if chat_id in active:
-        active.remove(chat_id)
+    active.discard(chat_id)
 
 
 async def get_active_video_chats() -> list:
-    return activevideo
+    return list(activevideo)
 
 
 async def is_active_video_chat(chat_id: int) -> bool:
-    if chat_id not in activevideo:
-        return False
-    else:
-        return True
+    return chat_id in activevideo
 
 
 async def add_active_video_chat(chat_id: int):
-    if chat_id not in activevideo:
-        activevideo.append(chat_id)
+    activevideo.add(chat_id)
 
 
 async def remove_active_video_chat(chat_id: int):
-    if chat_id in activevideo:
-        activevideo.remove(chat_id)
+    activevideo.discard(chat_id)
 
 
 async def check_nonadmin_chat(chat_id: int) -> bool:
