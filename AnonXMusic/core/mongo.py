@@ -1,8 +1,8 @@
-import asyncio
 import logging
 
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ASCENDING, IndexModel
+from pymongo.errors import OperationFailure
 
 from config import DB_NAME, MONGO_DB_URI
 from ..logging import LOGGER
@@ -13,7 +13,6 @@ _LOG.info("Connecting to MongoDB...")
 try:
     _mongo_async_ = AsyncIOMotorClient(
         MONGO_DB_URI,
-        # Connection pool tuning for high-load bots on dedicated servers
         maxPoolSize=20,
         minPoolSize=2,
         maxIdleTimeMS=30_000,
@@ -28,32 +27,45 @@ except Exception as e:
     exit()
 
 
+async def _safe_create_index(collection, index_model: IndexModel) -> None:
+    """
+    Create an index, silently ignoring conflicts with existing indexes
+    (MongoDB error code 85 = IndexOptionsConflict, 86 = IndexKeySpecsConflict).
+    Any other OperationFailure is also swallowed — index creation is best-effort.
+    """
+    try:
+        await collection.create_indexes([index_model])
+    except OperationFailure as e:
+        if e.code in (85, 86):
+            pass  # Index already exists under a different name — that's fine
+        else:
+            _LOG.debug(f"[mongo] Index creation skipped for {collection.name}: {e}")
+    except Exception as e:
+        _LOG.debug(f"[mongo] Index creation skipped for {collection.name}: {e}")
+
+
 async def ensure_indexes():
     """
     Create indexes for frequently-queried fields.
     Reduces full-collection scans which are a major source of lag.
+    Uses background=True so the bot isn't blocked during index builds.
     """
-    try:
-        # chat_id is the most-queried field across almost every collection
-        _chat_id_index = IndexModel([("chat_id", ASCENDING)], background=True)
+    chat_id_index = IndexModel([("chat_id", ASCENDING)], background=True)
 
-        collections_with_chat_id = [
-            "adminauth", "authuser", "assistants", "blacklistChat",
-            "cplaymode", "language", "playmode", "playtypedb",
-            "skipmode", "upcount",
-        ]
-        for col_name in collections_with_chat_id:
-            try:
-                await mongodb[col_name].create_indexes([_chat_id_index])
-            except Exception:
-                pass  # Index may already exist — that's fine
+    for col_name in [
+        "adminauth", "authuser", "assistants", "blacklistChat",
+        "cplaymode", "language", "playmode", "playtypedb",
+        "skipmode", "upcount",
+    ]:
+        await _safe_create_index(mongodb[col_name], chat_id_index)
 
-        # search_cache: query field
-        await mongodb["search_cache"].create_indexes([
-            IndexModel([("query", ASCENDING)], background=True),
-            IndexModel([("video_id", ASCENDING)], background=True),
-        ])
+    await _safe_create_index(
+        mongodb["search_cache"],
+        IndexModel([("query", ASCENDING)], background=True),
+    )
+    await _safe_create_index(
+        mongodb["search_cache"],
+        IndexModel([("video_id", ASCENDING)], background=True),
+    )
 
-        _LOG.info("MongoDB indexes ensured.")
-    except Exception as e:
-        _LOG.warning(f"Could not ensure MongoDB indexes: {e}")
+    _LOG.info("MongoDB indexes ensured.")
